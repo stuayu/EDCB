@@ -1,0 +1,50 @@
+name: EDCB_Build
+
+on:
+  push:
+    branches: [my-build]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        platform:
+          - x64
+          - Win32
+        configuration:
+          - Release
+
+    steps:
+      - name: Checkout EDCB
+        uses: actions/checkout@v4
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: MSBuild
+        run: |
+          ./versionhashgen.bat
+          cd Document
+          MSBuild EDCB_ALL.VS2015.sln /t:rebuild /p:Configuration="${{ matrix.configuration }}" /p:Platform="${{ matrix.platform }}" /p:PlatformToolset=v143
+
+      - name: ビルドファイル整理
+        if: ${{ matrix.platform }} == "Win32"
+        run: |
+          cd x86/${{ matrix.configuration }}
+          Get-ChildItem *.lib,*.pdb,*.map,*.exp -Recurse | Remove-Item
+          Copy-Item ../${{ matrix.configuration }} ../../Artifact -Recurse
+
+      - name: ビルドファイル整理
+        if: ${{ matrix.platform }} == "x64"
+        run: |
+          cd x64/${{ matrix.configuration }}
+          Get-ChildItem *.lib,*.pdb,*.map,*.exp -Recurse | Remove-Item
+          Copy-Item ../${{ matrix.configuration }} ../../Artifact -Recurse
+  
+      - name: Upload asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDCB_${{ matrix.platform }}_${{ matrix.configuration }}
+          path: Artifact
