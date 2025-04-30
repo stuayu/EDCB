@@ -21,6 +21,8 @@ PROCESS_MANAGEMENT_LIST={
   'nvencc',
   'qsvencc',
   'vceencc',
+  'jkcnsl',
+  'jkrdlog',
 }
 
 --各種一覧のいちどに表示する行数
@@ -244,13 +246,42 @@ ARIBB24_USE_SVG=false
 --データ放送表示機能を使うかどうか。トランスコード中に表示する場合はpsisiarc.exeを用意すること。IE非対応
 USE_DATACAST=true
 
---ライブ実況表示機能を使うかどうか(Windows専用)
---利用には実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
+--ライブ実況表示機能を使うかどうか
+--利用にはJKCNSL_PATHを設定するか、実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
 USE_LIVEJK=true
 
---実況ログ表示機能を使う場合、jkrdlog.exeの絶対パス
+--jkcnslを直接呼び出してライブ実況する場合、その絶対パス。Windows以外ではコマンド名
+--コメント投稿したい場合はあらかじめjkcnsl側でログインしておく(jkcnslのReadmeを参照)
+JKCNSL_PATH=nil
+--JKCNSL_PATH='C:\\Path\\to\\jkcnsl.exe' --Windows
+--JKCNSL_PATH='jkcnsl' --Windows以外
+
+--jkcnslの設定ファイルなどが置かれている場所(通常、変更不要)
+JKCNSL_UNIX_BASE_DIR='/var/local/jkcnsl'
+
+--以下、JKCNSL_で始まる定数はjkcnslを直接呼び出してライブ実況する場合のオプション。意味はNicoJKの対応する設定と同じ
+JKCNSL_REFUGE_URI=nil
+JKCNSL_DROP_FORWARDED_COMMENT=false
+JKCNSL_REFUGE_MIXING=false
+JKCNSL_ANONYMITY=true
+
+--実況の番号(jk?)と、チャットのID(ch???やlv???など)
+--指定しない番号には"jkconst.lua"にある既定値が使われる
+JKCNSL_CHAT_STREAMS={
+  --jk7の対応づけを変更したいとき
+  --[7]='ch???',
+  --jk7はどこにも接続したくないとき
+  --[7]='',
+  --jk7はニコニコ実況だけにしたいとき
+  --[7]='ch2646441,',
+  --jk7はNX-Jikkyo・避難所だけにしたいとき("NX"の部分は任意の英数字)
+  --[7]=',NX',
+}
+
+--実況ログ表示機能を使う場合、jkrdlog.exeの絶対パス。Windows以外ではコマンド名
 JKRDLOG_PATH=nil
---JKRDLOG_PATH='C:\\Path\\to\\jkrdlog.exe'
+--JKRDLOG_PATH='C:\\Path\\to\\jkrdlog.exe' --Windows
+--JKRDLOG_PATH='jkrdlog' --Windows以外
 
 --実況コメントの文字の高さ(px)
 JK_COMMENT_HEIGHT=32
@@ -260,7 +291,7 @@ JK_COMMENT_DURATION=5
 
 --実況ログ表示機能のデジタル放送のサービスIDと、実況の番号(jk?)
 --キーの下4桁の16進数にサービスID、上1桁にネットワークID(ただし地上波は15=0xF)を指定
---指定しないサービスにはjkrdlogの既定値が使われる
+--指定しないサービスには"jkconst.lua"にある既定値が使われる
 JK_CHANNELS={
   --例:テレビ東京(0x0430)をjk7と対応づけたいとき
   --[0xF0430]=7,
@@ -340,7 +371,12 @@ function VideoWrapperBegin()
 end
 
 function VideoWrapperEnd()
-  return '</div><div id="jikkyo-comm" style="display:none"></div></div></div>'
+  return '</div><div id="jikkyo-comm" style="display:none">'
+    ..'<button type="button" onclick="shiftJikkyo(-15)">-15</button>'
+    ..'<button type="button" onclick="shiftJikkyo(-1)">-1</button>'
+    ..'<button type="button" onclick="shiftJikkyo(1)">+1</button>'
+    ..'<button type="button" onclick="shiftJikkyo(15)">+15</button>'
+    ..'<div id="jikkyo-chats"></div></div></div></div>'
 end
 
 function TranscodeSettingTemplate(xq,fsec)
@@ -352,7 +388,7 @@ function TranscodeSettingTemplate(xq,fsec)
   end
   s=s..'</select>\n'
   if fsec then
-    s=s..'offset: <select name="offset">'
+    s=s..'<select name="offset">'
     for i=0,100 do
       s=s..'<option value="'..i..'"'..Selected((xq.offset or 0)==i)..'>'
         ..(fsec>0 and ('%dm%02ds'):format(math.floor(fsec*i/100/60),fsec*i/100%60)..(i%5==0 and '|'..i..'%' or '') or i..'%')
@@ -385,7 +421,7 @@ end
 
 function OnscreenButtonsScriptTemplate(xcode)
   return [=[
-<script src="script.js?ver=20250108"></script>
+<script src="script.js?ver=20250403"></script>
 <script>
 runOnscreenButtonsScript(]=]..(xcode and 'true' or 'false')..[=[);
 </script>
@@ -405,26 +441,26 @@ function WebBmlScriptTemplate(label)
   <span class="remote-control-receiving-status" style="display:none">Loading...</span>
   <div class="remote-control-indicator"></div>
 </div>
-<label><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
+<label class="video-side-item"><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
 <script src="web_bml_play_ts.js"></script>
 ]=] or ''
 end
 
-function JikkyoScriptTemplate(live,jikkyo)
+function JikkyoScriptTemplate(live,shiftable,jikkyo)
   return (live and USE_LIVEJK or not live and JKRDLOG_PATH) and [=[
-<label><input id="cb-jikkyo"]=]..Checkbox(jikkyo)..[=[>jikkyo</label>
-<label class="enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>onscr</label>
+<label class="video-side-item"><input id="cb-jikkyo"]=]..Checkbox(jikkyo)..[=[>jikkyo</label>
+<label class="video-side-item enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>scr</label>
 <script src="danmaku.js"></script>
 <script>
-runJikkyoScript(]=]..JK_COMMENT_HEIGHT..','..JK_COMMENT_DURATION..',function(tag){'..JK_CUSTOM_REPLACE..[=[
+runJikkyoScript(]=]..(shiftable and 'true' or 'false')..','..JK_COMMENT_HEIGHT..','..JK_COMMENT_DURATION..',function(tag){'..JK_CUSTOM_REPLACE..[=[
   return tag;});
 </script>
 ]=] or ''
 end
 
 function VideoScriptTemplate()
-  return OnscreenButtonsScriptTemplate(false)..WebBmlScriptTemplate('datacast.psc')..JikkyoScriptTemplate(false,XCODE_CHECK_JIKKYO)..[=[
-<label id="label-caption" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>caption.vtt</label>
+  return OnscreenButtonsScriptTemplate(false)..WebBmlScriptTemplate('data.psc')..JikkyoScriptTemplate(false,true,XCODE_CHECK_JIKKYO)..[=[
+<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>CC.vtt</label>
 <script src="aribb24.js"></script>
 <script>
 ]=]..(VIDEO_MUTED and 'vid.e.muted=true;\n' or '')..(VIDEO_VOLUME and 'vid.e.volume='..VIDEO_VOLUME..';\n' or '')..[=[
@@ -438,17 +474,18 @@ runVideoScript(]=]
 end
 
 function TranscodeScriptTemplate(live,caption,jikkyo,params)
-  return OnscreenButtonsScriptTemplate(true)..WebBmlScriptTemplate('datacast')..JikkyoScriptTemplate(live,jikkyo)..[=[
-<label id="label-caption" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>caption</label>
-]=]..(live and '<label><input id="cb-live" type="checkbox">live</label>\n' or '')
+  return OnscreenButtonsScriptTemplate(true)..WebBmlScriptTemplate('data')..JikkyoScriptTemplate(live,false,jikkyo)..[=[
+<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>CC</label>
+]=]..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox">live</label>\n' or '')
   ..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
 <script src="ts-live.lua?t=-misc.js"></script>
-<span class="thumb-popup"><canvas id="vid-thumb" style="display:none"></canvas></span>
-]=] or '')..[=[
+<span class="thumb-popup"><canvas id="vid-thumb" style="display:none"></canvas><input id="vid-seek" type="range" style="display:none"></span>
+]=] or [=[
 <input id="vid-seek" type="range" style="display:none">
-<span id="vid-seek-status"></span>
-<input id="vid-volume" type="range" style="display:none">
-<button id="vid-unmute" type="button" style="display:none">🔊</button>
+]=])..[=[
+<span id="vid-seek-status" style="visibility:hidden">&emsp; &emsp; 88m88s→|%</span>
+<input id="vid-volume" class="video-side-item" type="range" style="display:none">
+<button id="vid-unmute" class="video-side-item" type="button" style="display:none">🔊</button>
 <script>
 ]=]..(XCODE_VIDEO_MUTED and '(vid.c||vid.e).muted=true;\n' or '')..(VIDEO_VOLUME and '(vid.c||vid.e).volume='..VIDEO_VOLUME..';\n' or '')..[=[
 runTranscodeScript(]=]
@@ -493,34 +530,39 @@ runTsliveScript(]=]
 ]=]
 end
 
-function ThumbnailTemplate(f,dur,fsize)
-  local r={''}
-  if EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') then
-    for i=1,math.min(#THUMBNAILS,5) do
-      if SeekSec(f,THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i],dur,fsize) then
-        --Iフレームを取得してスクリプト上に置いておく
-        local stream=GetIFrameVideoStream(f)
-        if stream then
-          r[#r+1]='    streams.push("'
-          r[#r+1]=mg.base64_encode(stream)
-          r[#r+1]='");\n'
-        end
-      end
-    end
-  end
-  if #r<=1 then return {} end
-  r[1]=[=[
-<div id="vid-thumbs"></div>
+function ThumbnailTemplate(f,dur,fsize,fname)
+  --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
+  local r={'<div id="vid-thumbs"></div>',[=[
 <script type="text/javascript" src="ts-live.lua?t=-misc.js"></script>
 <script type="text/javascript">
 setTimeout(function(){
   createMiscWasmModule().then(function(mod){
-    var streams=[];
-]=]
-  r[#r+1]=[=[
-    var canvases=[];
+    var streams=[
+      ["]=]}
+  if EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') then
+    for i=1,math.min(#THUMBNAILS,5) do
+      local sec=math.floor(THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i])
+      if SeekSec(f,sec,dur,fsize) then
+        --Iフレームを取得してスクリプト上に置いておく
+        local stream=GetIFrameVideoStream(f)
+        if stream then
+          r[#r+1]=mg.base64_encode(stream)
+          r[#r+1]='",'..sec..'],\n      ["'
+        end
+      end
+    end
+  end
+  if #r<=2 then return {''} end
+  r[#r]=r[#r]:gsub('].*','')..[=[]
+    ];
+    var flipTimer=0;
+    var pushed=null;
+    var thumbs=document.getElementById("vid-thumbs");
+    var div=document.createElement("div");
+    div.style.display="none";
+    thumbs.appendChild(div);
     for(var i=0;i<streams.length;i++){
-      var b=atob(streams[i]);
+      var b=atob(streams[i][0]);
       var u=new Uint8Array(b.length);
       for(var j=0;j<b.length;j++){
         u[j]=b.charCodeAt(j);
@@ -528,17 +570,65 @@ setTimeout(function(){
       var buffer=mod.getGrabberInputBuffer(u.length);
       buffer.set(u);
       var frame=mod.grabFirstFrame(u.length);
-      if(frame){
+      if(!frame)continue;
+      (function(){
         var canvas=document.createElement("canvas");
+]=]..(fname and [=[
+        var sec=streams[i][1];
+        function flip(){
+          var myTimer=flipTimer;
+          var xhr=new XMLHttpRequest();
+          xhr.open("GET","grabber.lua?fname=]=]..mg.url_encode(fname)..[=[&ofssec="+(sec+5));
+          xhr.responseType="arraybuffer";
+          xhr.onloadend=function(){
+            if(xhr.status!=200||!xhr.response){
+              if(flipTimer==myTimer)flipTimer=setTimeout(flip,3000);
+              return;
+            }
+            var buffer=mod.getGrabberInputBuffer(xhr.response.byteLength);
+            buffer.set(new Uint8Array(xhr.response));
+            var frame=mod.grabFirstFrame(xhr.response.byteLength);
+            if(frame){
+              canvas.width=frame.width;
+              canvas.height=frame.height;
+              canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
+            }
+            sec+=5;
+            if(flipTimer==myTimer){
+              div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
+              flipTimer=setTimeout(flip,500);
+            }
+          };
+          xhr.send();
+        }
+        canvas.onmouseenter=function(){
+          var ra=canvas.getBoundingClientRect();
+          var rb=thumbs.getBoundingClientRect();
+          div.style.left=ra.x-rb.x+"px";
+          div.style.bottom=rb.bottom-ra.bottom+"px";
+          div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
+          div.style.display=null;
+          clearTimeout(flipTimer);
+          flipTimer=setTimeout(flip,1000);
+        };
+        canvas.onmouseleave=function(){
+          clearTimeout(flipTimer);
+          flipTimer=0;
+          div.style.display="none";
+          pushed=null;
+        };
+        canvas.onclick=function(){
+          pushed=pushed==canvas?null:canvas;
+          if(pushed)canvas.onmouseenter();
+          else canvas.onmouseleave();
+        };
+]=] or '')..[=[
         canvas.width=frame.width;
         canvas.height=frame.height;
         canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
-        canvases.push(canvas);
-      }
-    }
-    for(var i=0;i<canvases.length;i++){
-      canvases[i].className="thumb-]=]..math.min(#THUMBNAILS,5)..[=[";
-      document.getElementById("vid-thumbs").appendChild(canvases[i]);
+        canvas.className="thumb-]=]..math.min(#THUMBNAILS,5)..[=[";
+        thumbs.appendChild(canvas);
+      })();
     }
   });
 },0);
@@ -547,21 +637,20 @@ setTimeout(function(){
   return r
 end
 
---EPG情報をTextに変換(EpgTimerUtil.cppから移植)
+--EPG情報をTextに変換(EpgTimerUtil.cppから移植。EpgTimerSrvの番組情報と同じ形式)
 function ConvertProgramText(v)
   local s=''
   if v then
-    s=s..(v.startTime and FormatTimeAndDuration(v.startTime, v.durationSecond)..(v.durationSecond and '' or '～未定') or '未定')..'\n'
+    s=s..(v.startTime and FormatTimeAndDuration(v.startTime, v.durationSecond)..(v.durationSecond and '' or ' ～ 未定') or '未定')..'\n'
     local found=BinarySearch(edcb.GetServiceList() or {},v,CompareFields('onid',false,'tsid',false,'sid'))
     if found then
       s=s..found.service_name
     end
-    s=s..'\n'
-    if v.shortInfo then
-      s=s..v.shortInfo.event_name..'\n\n'..DecorateUri(v.shortInfo.text_char)..'\n\n'
-    end
+    s=s..'\n'..((v.shortInfo and v.shortInfo.event_name or ''):gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')..'\n'
+      ..DecorateUri(((v.shortInfo and v.shortInfo.text_char or ''):gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n'))..'\n'
     if v.extInfo then
-      s=s..DecorateUri(('\n'..v.extInfo.text_char):gsub('\n%- ([^\n\r]*)','\n<span class="escape-text">- </span><b>%1</b>'):sub(2))..'\n\n'
+      s=s..'<small>詳細情報</small>'..DecorateUri(('\n'..(v.extInfo.text_char:gsub('\r',''):gsub('^\n+','')..'\n\n'):gsub('\n\n\n+','\n\n'))
+          :gsub('\n%- ([^\n]*)','\n<span class="escape-text">- </span><b>%1</b>'))..'\n'
     end
     if v.contentInfoList then
       s=s..'ジャンル : \n'
@@ -569,23 +658,41 @@ function ConvertProgramText(v)
         --0x0E00は番組付属情報、0x0E01はCS拡張用情報
         local nibble=w.content_nibble==0x0E00 and w.user_nibble+0x6000 or
                      w.content_nibble==0x0E01 and w.user_nibble+0x7000 or w.content_nibble
-        s=s..edcb.GetGenreName(math.floor(nibble/256)*256+255)..' - '..edcb.GetGenreName(nibble)..'\n'
+        local nibble1=math.floor(nibble/256)
+        local name1=edcb.GetGenreName(nibble1*256+255)
+        local name2=edcb.GetGenreName(nibble)
+        s=s..(name1=='' and ('(0x%02X) - (0x%02X)'):format(nibble1,nibble%256)
+                or name1..(name2~='' and ' - '..name2 or nibble1~=0x0F and (' - (0x%02X)'):format(nibble%256) or ''))..'\n'
       end
       s=s..'\n'
     end
     if v.componentInfo then
-      s=s..'映像 : '..edcb.GetComponentTypeName(v.componentInfo.stream_content*256+v.componentInfo.component_type)..' '..v.componentInfo.text_char..'\n'
+      local w=v.componentInfo
+      local name=edcb.GetComponentTypeName(w.stream_content*256+w.component_type)
+      local tc=(w.text_char:gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')
+      s=s..'映像 : '..(name=='' and ('(0x%02X,0x%02X)'):format(w.stream_content,w.component_type) or name)..'\n'..(#tc>1 and tc or '')
     end
-    if v.audioInfoList then
+    if v.audioInfoList and #v.audioInfoList>0 then
       s=s..'音声 : '
       for i,w in ipairs(v.audioInfoList) do
-        s=s..edcb.GetComponentTypeName(w.stream_content*256+w.component_type)..' '..w.text_char..'\nサンプリングレート : '
-          ..(({[1]='16',[2]='22.05',[3]='24',[5]='32',[6]='44.1',[7]='48'})[w.sampling_rate] or '?')..'kHz\n'
+        local name=edcb.GetComponentTypeName(w.stream_content*256+w.component_type)
+        local tc=(w.text_char:gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')
+        s=s..(name=='' and ('(0x%02X,0x%02X)'):format(w.stream_content,w.component_type) or name)..'\n'..(#tc>1 and tc or '')
+          ..'サンプリングレート : '
+          ..(({[1]='16',[2]='22.05',[3]='24',[5]='32',[6]='44.1',[7]='48'})[w.sampling_rate] or ('(0x%02X)'):format(w.sampling_rate))..'kHz\n'
+      end
+    end
+    s=s..'\n'..(NetworkType(v.onid)=='地デジ' and '' or v.freeCAFlag and '有料放送\n\n' or '無料放送\n\n')
+    if v.eventRelayInfo and #v.eventRelayInfo.eventDataList>0 then
+      s=s..'イベントリレーあり : '
+      for i,w in ipairs(v.eventRelayInfo.eventDataList) do
+        local found=BinarySearch(edcb.GetServiceList() or {},w,CompareFields('onid',false,'tsid',false,'sid'))
+        s=s..('ID:%d(0x%04X)-%d(0x%04X)-%d(0x%04X)-%d(0x%04X)'):format(w.onid,w.onid,w.tsid,w.tsid,w.sid,w.sid,w.eid,w.eid)
+          ..(found and ' '..found.service_name or '')..'\n'
       end
       s=s..'\n'
     end
-    s=s..'\n'..(NetworkType(v.onid)=='地デジ' and '' or v.freeCAFlag and '有料放送\n' or '無料放送\n')
-      ..('OriginalNetworkID:%d(0x%04X)\n'):format(v.onid,v.onid)
+    s=s..('OriginalNetworkID:%d(0x%04X)\n'):format(v.onid,v.onid)
       ..('TransportStreamID:%d(0x%04X)\n'):format(v.tsid,v.tsid)
       ..('ServiceID:%d(0x%04X)\n'):format(v.sid,v.sid)
       ..('EventID:%d(0x%04X)\n'):format(v.eid,v.eid)
@@ -911,8 +1018,9 @@ end
 
 --コマンドラインの引数として使うパスを引用符で囲む
 --※Windowsでは引用符などパスとして不正な文字がpathに含まれていないことが前提
-function QuoteCommandArgForPath(path)
-  return WIN32 and '"'..path:gsub('[&%^]','^%0')..'"' or "'"..path:gsub("'","'\"'\"'").."'"
+--※Windowsでstartコマンドなどでネストされたコマンドの引数として使うときはnestedにする
+function QuoteCommandArgForPath(path,nested)
+  return WIN32 and '"'..(nested and path:gsub('[&^]','^%0') or path):gsub('%%','"%%"')..'"' or "'"..path:gsub("'","'\"'\"'").."'"
 end
 
 --SendTSTCPのストリーム取得用パイプのパス
@@ -1247,13 +1355,6 @@ function ReadJikkyoChunk(f)
   return head..payload
 end
 
---jkrdlogに渡す実況のIDを取得する
-function GetJikkyoID(nid,sid)
-  --地上波のサービス種別とサービス番号はマスクする
-  local id=NetworkType(nid)=='地デジ' and 0xf0000+bit32.band(sid,0xfe78) or nid*65536+sid
-  return not JK_CHANNELS[id] and 'ns'..id or JK_CHANNELS[id]>0 and 'jk'..JK_CHANNELS[id]
-end
-
 --リトルエンディアンの値を取得する
 function GetLeNumber(buf,pos,len)
   local n=0
@@ -1412,5 +1513,5 @@ end
 
 if not WIN32 then
   INDEX_ENABLE_SUSPEND=false
-  USE_LIVEJK=false
+  USE_LIVEJK=not not JKCNSL_PATH
 end
