@@ -21,6 +21,8 @@ PROCESS_MANAGEMENT_LIST={
   'nvencc',
   'qsvencc',
   'vceencc',
+  'jkcnsl',
+  'jkrdlog',
 }
 
 --各種一覧のいちどに表示する行数
@@ -57,6 +59,17 @@ MEDIA_EXTENSION_LIST={
   '.webm',
 }
 
+--メディアファイルのサムネイル画像の位置(0～1未満の値は割合、これ以外の正の値は秒数、負の値は末尾からの秒数)
+--最大5個。今のところTSファイルのみ対応。TS-Live!モジュールが必要
+THUMBNAILS={
+  20,
+  1/3,
+  -20,
+}
+
+--シーク中にサムネイル画像を表示するかどうか。TS-Live!モジュールが必要
+THUMBNAIL_ON_SEEK=true
+
 --HLS(HTTP Live Streaming)を許可するかどうか。する場合はtsmemseg.exeを用意すること。IE非対応
 ALLOW_HLS=true
 --ネイティブHLS非対応環境でもhls.jsを使ってHLS再生するかどうか
@@ -67,8 +80,15 @@ USE_MP4_HLS=true
 --視聴機能(viewボタン)でLowLatencyHLSにするかどうか。再生遅延が小さくなる。ネイティブHLS環境ではHTTP/2が要求されるためhls.js使用時のみ有用
 USE_MP4_LLHLS=true
 
---倍速再生(fastボタン)の速度
-XCODE_FAST=1.25
+--倍速再生の倍率のリスト
+XCODE_FAST_RATES={
+  0.5,
+  0.75,
+  1.0,
+  1.25,
+  1.5,
+  2.0,
+}
 
 --トランスコードオプション
 --HLSのときはセグメント長約4秒、最大8MBytes(=1秒あたり16Mbits)を想定しているので、オプションもそれに合わせること
@@ -78,9 +98,9 @@ XCODE_FAST=1.25
 --       Windows以外では".exe"が除去されて最終候補のみ参照される
 --option:$OUTPUTは必須、再生時に適宜置換される。標準入力からMPEG2-TSを受け取るようにオプションを指定する
 --filter(Cinema):等速再生用、filterCinemaは未定義でもよい。特別に':'とするとトランスコードを省略してそのまま出力する
---filter*Fast:倍速再生用、未定義でもよい
+--filter*FastFunc:倍速再生用、未定義でもよい。倍率に応じたオプションを返す関数を指定する
 --editorFast:単独で倍速再生にできないトランスコーダーの手前に置く編集コマンド。指定方法はxcoderと同様
---editorOptionFast:標準入出力ともにMPEG2-TSで倍速再生になるようにオプションを指定する
+--editorOptionFastFunc:標準入出力ともにMPEG2-TSで倍速再生になるようにオプションを返す関数を指定する
 XCODE_OPTIONS={
   {
     --ffmpegの例。-b:vでおおよその最大ビットレートを決め、-qminで動きの少ないシーンのデータ量を節約する
@@ -89,8 +109,8 @@ XCODE_OPTIONS={
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 1888k -qmin 23 -maxrate 4M -bufsize 4M -preset veryfast $FILTER -s 640x360 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFast='-g 120 -vf yadif=0:-1:1,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST,
-    filterCinemaFast='-g 96 -vf pullup,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -r 24000/1001',
+    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
+    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
     captionNone='-sn',
     captionHls='-map 0:s? -scodec copy',
     output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
@@ -102,8 +122,8 @@ XCODE_OPTIONS={
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_nvenc -profile:v main -level 41 -b:v 3936k -qmin 23 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFast='-g 120 -vf yadif=0:-1:1,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST,
-    filterCinemaFast='-g 96 -vf pullup,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -r 24000/1001',
+    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
+    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
     captionNone='-sn',
     captionHls='-map 0:s? -scodec copy',
     output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
@@ -116,8 +136,8 @@ XCODE_OPTIONS={
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_qsv -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFast='-g 120 -vf yadif=0:-1:1,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST,
-    filterCinemaFast='-g 96 -vf pullup,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -r 24000/1001',
+    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
+    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
     captionNone='-sn',
     captionHls='-map 0:s? -scodec copy',
     output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
@@ -129,8 +149,8 @@ XCODE_OPTIONS={
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libvpx -b:v 1888k -quality realtime -cpu-used 1 $FILTER -s 640x360 -map 0:a:$AUDIO -acodec libvorbis -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-vf yadif=0:-1:1',
     filterCinema='-vf pullup -r 24000/1001',
-    filterFast='-vf yadif=0:-1:1,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST,
-    filterCinemaFast='-vf pullup,setpts=PTS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -r 24000/1001',
+    filterFastFunc=function(rate) return '-vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate end,
+    filterCinemaFastFunc=function(rate) return '-vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -r 24000/1001' end,
     captionNone='-sn',
     output={'webm','-f webm -'},
   },
@@ -142,10 +162,10 @@ XCODE_OPTIONS={
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(120*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal',
-    filterCinemaFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(96*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal --vpp-decimate',
+    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
+    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFast='-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..XCODE_FAST..' -map 0:v:0? -vcodec copy -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -',
+    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
     captionNone='',
     captionHls='--sub-copy',
     output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
@@ -159,10 +179,10 @@ XCODE_OPTIONS={
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(120*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal',
-    filterCinemaFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(96*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal --vpp-decimate',
+    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
+    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFast='-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..XCODE_FAST..' -map 0:v:0? -vcodec copy -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -',
+    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
     captionNone='',
     captionHls='--sub-copy',
     output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
@@ -176,31 +196,31 @@ XCODE_OPTIONS={
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(120*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal',
-    filterCinemaFast='--fps '..math.floor(30000*XCODE_FAST+0.5)..'/1001 --gop-len '..math.floor(96*XCODE_FAST)..' --interlace tff --vpp-deinterlace normal --vpp-decimate',
+    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
+    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFast='-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..XCODE_FAST..' -map 0:v:0? -vcodec copy -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -',
+    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
     captionNone='',
     captionHls='--sub-copy',
     output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
     outputHls={'m2t','-f mpegts -o -'},
   },
   {
-    --TS-Live!方式の例。映像はそのまま転送。倍速再生にはffmpegも必要
+    --TS-Live!方式の例。そのまま転送。トランスコーダー不要(tsreadex.exeは必要)
     name='tslive',
     tslive=true,
-    xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec copy $FILTER -map 0:a:$AUDIO -map 0:s? -scodec copy -max_interleave_delta 300k $OUTPUT',
+    xcoder='',
+    option='',
     filter=':',
-    filterFast='-bsf:v setts=ts=TS/'..XCODE_FAST..' -af atempo='..XCODE_FAST..' -bsf:s setts=ts=TS/'..XCODE_FAST..' -acodec aac -ac 2 -b:a 160k',
-    output={'m2t','-f mpegts -'},
+    filterFastFunc=function() return ':' end,
+    output={'m2t',''},
   },
 }
 
 --フォーム上の各オプションのデフォルト選択状態を指定する
 XCODE_SELECT_OPTION=1
 XCODE_CHECK_CINEMA=false
-XCODE_CHECK_FAST=false
+XCODE_SELECT_FAST=0
 XCODE_CHECK_CAPTION=false
 XCODE_CHECK_JIKKYO=false
 
@@ -226,13 +246,42 @@ ARIBB24_USE_SVG=false
 --データ放送表示機能を使うかどうか。トランスコード中に表示する場合はpsisiarc.exeを用意すること。IE非対応
 USE_DATACAST=true
 
---ライブ実況表示機能を使うかどうか(Windows専用)
---利用には実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
+--ライブ実況表示機能を使うかどうか
+--利用にはJKCNSL_PATHを設定するか、実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
 USE_LIVEJK=true
 
---実況ログ表示機能を使う場合、jkrdlog.exeの絶対パス
+--jkcnslを直接呼び出してライブ実況する場合、その絶対パス。Windows以外ではコマンド名
+--コメント投稿したい場合はあらかじめjkcnsl側でログインしておく(jkcnslのReadmeを参照)
+JKCNSL_PATH=nil
+--JKCNSL_PATH='C:\\Path\\to\\jkcnsl.exe' --Windows
+--JKCNSL_PATH='jkcnsl' --Windows以外
+
+--jkcnslの設定ファイルなどが置かれている場所(通常、変更不要)
+JKCNSL_UNIX_BASE_DIR='/var/local/jkcnsl'
+
+--以下、JKCNSL_で始まる定数はjkcnslを直接呼び出してライブ実況する場合のオプション。意味はNicoJKの対応する設定と同じ
+JKCNSL_REFUGE_URI=nil
+JKCNSL_DROP_FORWARDED_COMMENT=false
+JKCNSL_REFUGE_MIXING=false
+JKCNSL_ANONYMITY=true
+
+--実況の番号(jk?)と、チャットのID(ch???やlv???など)
+--指定しない番号には"jkconst.lua"にある既定値が使われる
+JKCNSL_CHAT_STREAMS={
+  --jk7の対応づけを変更したいとき
+  --[7]='ch???',
+  --jk7はどこにも接続したくないとき
+  --[7]='',
+  --jk7はニコニコ実況だけにしたいとき
+  --[7]='ch2646441,',
+  --jk7はNX-Jikkyo・避難所だけにしたいとき("NX"の部分は任意の英数字)
+  --[7]=',NX',
+}
+
+--実況ログ表示機能を使う場合、jkrdlog.exeの絶対パス。Windows以外ではコマンド名
 JKRDLOG_PATH=nil
---JKRDLOG_PATH='C:\\Path\\to\\jkrdlog.exe'
+--JKRDLOG_PATH='C:\\Path\\to\\jkrdlog.exe' --Windows
+--JKRDLOG_PATH='jkrdlog' --Windows以外
 
 --実況コメントの文字の高さ(px)
 JK_COMMENT_HEIGHT=32
@@ -242,7 +291,7 @@ JK_COMMENT_DURATION=5
 
 --実況ログ表示機能のデジタル放送のサービスIDと、実況の番号(jk?)
 --キーの下4桁の16進数にサービスID、上1桁にネットワークID(ただし地上波は15=0xF)を指定
---指定しないサービスにはjkrdlogの既定値が使われる
+--指定しないサービスには"jkconst.lua"にある既定値が使われる
 JK_CHANNELS={
   --例:テレビ東京(0x0430)をjk7と対応づけたいとき
   --[0xF0430]=7,
@@ -296,7 +345,8 @@ function GetTranscodeQueries(qs)
     offset=GetVarInt(qs,'offset',0,100),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,
-    fast=GetVarInt(qs,'fast')==1,
+    --0は明示的に等速を表す
+    fast=option and not XCODE_OPTIONS[option].filterFastFunc and 0 or GetVarInt(qs,'fast',0,#XCODE_FAST_RATES),
     reload=not not reload,
     loadKey=loadKey,
     caption=(GetVarInt(qs,'caption') or XCODE_CHECK_CAPTION and 1)==1,
@@ -309,7 +359,7 @@ function ConstructTranscodeQueries(xq)
     ..(xq.offset and '&amp;offset='..xq.offset or '')
     ..(xq.audio2 and '&amp;audio2=1' or '')
     ..(xq.cinema and '&amp;cinema=1' or '')
-    ..(xq.fast and '&amp;fast=1' or '')
+    ..(xq.fast and '&amp;fast='..xq.fast or '')
     ..(xq.loadKey and '&amp;'..(xq.reload and 're' or '')..'load='..xq.loadKey or '')
 end
 
@@ -321,7 +371,12 @@ function VideoWrapperBegin()
 end
 
 function VideoWrapperEnd()
-  return '</div></div></div>'
+  return '</div><div id="jikkyo-comm" style="display:none">'
+    ..'<button type="button" onclick="shiftJikkyo(-15)">-15</button>'
+    ..'<button type="button" onclick="shiftJikkyo(-1)">-1</button>'
+    ..'<button type="button" onclick="shiftJikkyo(1)">+1</button>'
+    ..'<button type="button" onclick="shiftJikkyo(15)">+15</button>'
+    ..'<div id="jikkyo-chats"></div></div></div></div>'
 end
 
 function TranscodeSettingTemplate(xq,fsec)
@@ -333,18 +388,30 @@ function TranscodeSettingTemplate(xq,fsec)
   end
   s=s..'</select>\n'
   if fsec then
-    s=s..'offset: <select name="offset">'
+    s=s..'<select name="offset">'
     for i=0,100 do
       s=s..'<option value="'..i..'"'..Selected((xq.offset or 0)==i)..'>'
         ..(fsec>0 and ('%dm%02ds'):format(math.floor(fsec*i/100/60),fsec*i/100%60)..(i%5==0 and '|'..i..'%' or '') or i..'%')
+    end
+    s=s..'</select>\n'
+      ..'<select name="fast">'
+    local has1=false
+    for i,v in ipairs(XCODE_FAST_RATES) do
+      if not has1 and v==1 then
+        has1=true
+        i=0
+      end
+      s=s..'<option value="'..i..'"'..Selected((xq.fast or XCODE_SELECT_FAST)==i)..'>×'..v..(math.fmod(v,1)==0 and '.0' or '')
+    end
+    if not has1 then
+      s=s..'<option value="0"'..Selected((xq.fast or XCODE_SELECT_FAST)==0)..'>×1.0'
     end
     s=s..'</select>\n'
   end
   s=s..'<label><input name="audio2"'..Checkbox(xq.audio2)..'>audio2</label>\n'
     ..'<label><input name="cinema"'..Checkbox(xq.cinema or not xq.option and XCODE_CHECK_CINEMA)..'>cinema</label>\n'
   if fsec then
-    s=s..'<label><input name="fast"'..Checkbox(xq.fast or not xq.option and XCODE_CHECK_FAST)..'>fast</label>\n'
-      ..'<span id="vid-offset"></span>'
+    s=s..'<span id="vid-offset"></span>'
   end
   s=s..'<span id="vid-bitrate"></span>\n'
     ..'<input type="hidden" name="caption" value="">\n'
@@ -354,7 +421,7 @@ end
 
 function OnscreenButtonsScriptTemplate(xcode)
   return [=[
-<script src="script.js?ver=20241127"></script>
+<script src="script.js?ver=20250403"></script>
 <script>
 runOnscreenButtonsScript(]=]..(xcode and 'true' or 'false')..[=[);
 </script>
@@ -374,26 +441,26 @@ function WebBmlScriptTemplate(label)
   <span class="remote-control-receiving-status" style="display:none">Loading...</span>
   <div class="remote-control-indicator"></div>
 </div>
-<label><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
+<label class="video-side-item"><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
 <script src="web_bml_play_ts.js"></script>
 ]=] or ''
 end
 
-function JikkyoScriptTemplate(live,jikkyo)
+function JikkyoScriptTemplate(live,shiftable,jikkyo)
   return (live and USE_LIVEJK or not live and JKRDLOG_PATH) and [=[
-<label><input id="cb-jikkyo"]=]..Checkbox(jikkyo)..[=[>jikkyo</label>
-<label class="enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>onscr</label>
+<label class="video-side-item"><input id="cb-jikkyo"]=]..Checkbox(jikkyo)..[=[>jikkyo</label>
+<label class="video-side-item enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>scr</label>
 <script src="danmaku.js"></script>
 <script>
-runJikkyoScript(]=]..JK_COMMENT_HEIGHT..','..JK_COMMENT_DURATION..',function(tag){'..JK_CUSTOM_REPLACE..[=[
+runJikkyoScript(]=]..(shiftable and 'true' or 'false')..','..JK_COMMENT_HEIGHT..','..JK_COMMENT_DURATION..',function(tag){'..JK_CUSTOM_REPLACE..[=[
   return tag;});
 </script>
 ]=] or ''
 end
 
 function VideoScriptTemplate()
-  return OnscreenButtonsScriptTemplate(false)..WebBmlScriptTemplate('datacast.psc')..JikkyoScriptTemplate(false,XCODE_CHECK_JIKKYO)..[=[
-<label id="label-caption" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>caption.vtt</label>
+  return OnscreenButtonsScriptTemplate(false)..WebBmlScriptTemplate('data.psc')..JikkyoScriptTemplate(false,true,XCODE_CHECK_JIKKYO)..[=[
+<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>CC.vtt</label>
 <script src="aribb24.js"></script>
 <script>
 ]=]..(VIDEO_MUTED and 'vid.e.muted=true;\n' or '')..(VIDEO_VOLUME and 'vid.e.volume='..VIDEO_VOLUME..';\n' or '')..[=[
@@ -407,13 +474,18 @@ runVideoScript(]=]
 end
 
 function TranscodeScriptTemplate(live,caption,jikkyo,params)
-  return OnscreenButtonsScriptTemplate(true)..WebBmlScriptTemplate('datacast')..JikkyoScriptTemplate(live,jikkyo)..[=[
-<label id="label-caption" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>caption</label>
-]=]..(live and '<label><input id="cb-live" type="checkbox">live</label>\n' or '')..[=[
+  return OnscreenButtonsScriptTemplate(true)..WebBmlScriptTemplate('data')..JikkyoScriptTemplate(live,false,jikkyo)..[=[
+<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>CC</label>
+]=]..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox">live</label>\n' or '')
+  ..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
+<script src="ts-live.lua?t=-misc.js"></script>
+<span class="thumb-popup"><canvas id="vid-thumb" style="display:none"></canvas><input id="vid-seek" type="range" style="display:none"></span>
+]=] or [=[
 <input id="vid-seek" type="range" style="display:none">
-<span id="vid-seek-status"></span>
-<input id="vid-volume" type="range" style="display:none">
-<button id="vid-unmute" type="button" style="display:none">🔊</button>
+]=])..[=[
+<span id="vid-seek-status" style="visibility:hidden">&emsp; &emsp; 88m88s→|%</span>
+<input id="vid-volume" class="video-side-item" type="range" style="display:none">
+<button id="vid-unmute" class="video-side-item" type="button" style="display:none">🔊</button>
 <script>
 ]=]..(XCODE_VIDEO_MUTED and '(vid.c||vid.e).muted=true;\n' or '')..(VIDEO_VOLUME and '(vid.c||vid.e).volume='..VIDEO_VOLUME..';\n' or '')..[=[
 runTranscodeScript(]=]
@@ -421,7 +493,7 @@ runTranscodeScript(]=]
   ..(live and USE_LIVEJK and 'true' or 'false')..','
   ..(not live and JKRDLOG_PATH and 'true' or 'false')..','
   ..math.floor(params.ofssec or 0)..','
-  ..(params.fast and XCODE_FAST or 1)..','
+  ..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..','
   ..'"'..(live and USE_LIVEJK and 'ctok='..CsrfToken('comment.lua')..'&n='..params.n..(params.id and '&id='..params.id or '') or '')..'"'..[=[
 );
 </script>
@@ -458,21 +530,127 @@ runTsliveScript(]=]
 ]=]
 end
 
---EPG情報をTextに変換(EpgTimerUtil.cppから移植)
+function ThumbnailTemplate(f,dur,fsize,fname)
+  --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
+  local r={'<div id="vid-thumbs"></div>',[=[
+<script type="text/javascript" src="ts-live.lua?t=-misc.js"></script>
+<script type="text/javascript">
+setTimeout(function(){
+  createMiscWasmModule().then(function(mod){
+    var streams=[
+      ["]=]}
+  if EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') then
+    for i=1,math.min(#THUMBNAILS,5) do
+      local sec=math.floor(THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i])
+      if SeekSec(f,sec,dur,fsize) then
+        --Iフレームを取得してスクリプト上に置いておく
+        local stream=GetIFrameVideoStream(f)
+        if stream then
+          r[#r+1]=mg.base64_encode(stream)
+          r[#r+1]='",'..sec..'],\n      ["'
+        end
+      end
+    end
+  end
+  if #r<=2 then return {''} end
+  r[#r]=r[#r]:gsub('].*','')..[=[]
+    ];
+    var flipTimer=0;
+    var pushed=null;
+    var thumbs=document.getElementById("vid-thumbs");
+    var div=document.createElement("div");
+    div.style.display="none";
+    thumbs.appendChild(div);
+    for(var i=0;i<streams.length;i++){
+      var b=atob(streams[i][0]);
+      var u=new Uint8Array(b.length);
+      for(var j=0;j<b.length;j++){
+        u[j]=b.charCodeAt(j);
+      }
+      var buffer=mod.getGrabberInputBuffer(u.length);
+      buffer.set(u);
+      var frame=mod.grabFirstFrame(u.length);
+      if(!frame)continue;
+      (function(){
+        var canvas=document.createElement("canvas");
+]=]..(fname and [=[
+        var sec=streams[i][1];
+        function flip(){
+          var myTimer=flipTimer;
+          var xhr=new XMLHttpRequest();
+          xhr.open("GET","grabber.lua?fname=]=]..mg.url_encode(fname)..[=[&ofssec="+(sec+5));
+          xhr.responseType="arraybuffer";
+          xhr.onloadend=function(){
+            if(xhr.status!=200||!xhr.response){
+              if(flipTimer==myTimer)flipTimer=setTimeout(flip,3000);
+              return;
+            }
+            var buffer=mod.getGrabberInputBuffer(xhr.response.byteLength);
+            buffer.set(new Uint8Array(xhr.response));
+            var frame=mod.grabFirstFrame(xhr.response.byteLength);
+            if(frame){
+              canvas.width=frame.width;
+              canvas.height=frame.height;
+              canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
+            }
+            sec+=5;
+            if(flipTimer==myTimer){
+              div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
+              flipTimer=setTimeout(flip,500);
+            }
+          };
+          xhr.send();
+        }
+        canvas.onmouseenter=function(){
+          var ra=canvas.getBoundingClientRect();
+          var rb=thumbs.getBoundingClientRect();
+          div.style.left=ra.x-rb.x+"px";
+          div.style.bottom=rb.bottom-ra.bottom+"px";
+          div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
+          div.style.display=null;
+          clearTimeout(flipTimer);
+          flipTimer=setTimeout(flip,1000);
+        };
+        canvas.onmouseleave=function(){
+          clearTimeout(flipTimer);
+          flipTimer=0;
+          div.style.display="none";
+          pushed=null;
+        };
+        canvas.onclick=function(){
+          pushed=pushed==canvas?null:canvas;
+          if(pushed)canvas.onmouseenter();
+          else canvas.onmouseleave();
+        };
+]=] or '')..[=[
+        canvas.width=frame.width;
+        canvas.height=frame.height;
+        canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
+        canvas.className="thumb-]=]..math.min(#THUMBNAILS,5)..[=[";
+        thumbs.appendChild(canvas);
+      })();
+    }
+  });
+},0);
+</script>
+]=]
+  return r
+end
+
+--EPG情報をTextに変換(EpgTimerUtil.cppから移植。EpgTimerSrvの番組情報と同じ形式)
 function ConvertProgramText(v)
   local s=''
   if v then
-    s=s..(v.startTime and FormatTimeAndDuration(v.startTime, v.durationSecond)..(v.durationSecond and '' or '～未定') or '未定')..'\n'
+    s=s..(v.startTime and FormatTimeAndDuration(v.startTime, v.durationSecond)..(v.durationSecond and '' or ' ～ 未定') or '未定')..'\n'
     local found=BinarySearch(edcb.GetServiceList() or {},v,CompareFields('onid',false,'tsid',false,'sid'))
     if found then
       s=s..found.service_name
     end
-    s=s..'\n'
-    if v.shortInfo then
-      s=s..v.shortInfo.event_name..'\n\n'..DecorateUri(v.shortInfo.text_char)..'\n\n'
-    end
+    s=s..'\n'..((v.shortInfo and v.shortInfo.event_name or ''):gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')..'\n'
+      ..DecorateUri(((v.shortInfo and v.shortInfo.text_char or ''):gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n'))..'\n'
     if v.extInfo then
-      s=s..DecorateUri(('\n'..v.extInfo.text_char):gsub('\n%- ([^\n\r]*)','\n<span class="escape-text">- </span><b>%1</b>'):sub(2))..'\n\n'
+      s=s..'<small>詳細情報</small>'..DecorateUri(('\n'..(v.extInfo.text_char:gsub('\r',''):gsub('^\n+','')..'\n\n'):gsub('\n\n\n+','\n\n'))
+          :gsub('\n%- ([^\n]*)','\n<span class="escape-text">- </span><b>%1</b>'))..'\n'
     end
     if v.contentInfoList then
       s=s..'ジャンル : \n'
@@ -480,23 +658,41 @@ function ConvertProgramText(v)
         --0x0E00は番組付属情報、0x0E01はCS拡張用情報
         local nibble=w.content_nibble==0x0E00 and w.user_nibble+0x6000 or
                      w.content_nibble==0x0E01 and w.user_nibble+0x7000 or w.content_nibble
-        s=s..edcb.GetGenreName(math.floor(nibble/256)*256+255)..' - '..edcb.GetGenreName(nibble)..'\n'
+        local nibble1=math.floor(nibble/256)
+        local name1=edcb.GetGenreName(nibble1*256+255)
+        local name2=edcb.GetGenreName(nibble)
+        s=s..(name1=='' and ('(0x%02X) - (0x%02X)'):format(nibble1,nibble%256)
+                or name1..(name2~='' and ' - '..name2 or nibble1~=0x0F and (' - (0x%02X)'):format(nibble%256) or ''))..'\n'
       end
       s=s..'\n'
     end
     if v.componentInfo then
-      s=s..'映像 : '..edcb.GetComponentTypeName(v.componentInfo.stream_content*256+v.componentInfo.component_type)..' '..v.componentInfo.text_char..'\n'
+      local w=v.componentInfo
+      local name=edcb.GetComponentTypeName(w.stream_content*256+w.component_type)
+      local tc=(w.text_char:gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')
+      s=s..'映像 : '..(name=='' and ('(0x%02X,0x%02X)'):format(w.stream_content,w.component_type) or name)..'\n'..(#tc>1 and tc or '')
     end
-    if v.audioInfoList then
+    if v.audioInfoList and #v.audioInfoList>0 then
       s=s..'音声 : '
       for i,w in ipairs(v.audioInfoList) do
-        s=s..edcb.GetComponentTypeName(w.stream_content*256+w.component_type)..' '..w.text_char..'\nサンプリングレート : '
-          ..(({[1]='16',[2]='22.05',[3]='24',[5]='32',[6]='44.1',[7]='48'})[w.sampling_rate] or '?')..'kHz\n'
+        local name=edcb.GetComponentTypeName(w.stream_content*256+w.component_type)
+        local tc=(w.text_char:gsub('\r',''):gsub('^\n+','')..'\n'):gsub('\n\n+','\n')
+        s=s..(name=='' and ('(0x%02X,0x%02X)'):format(w.stream_content,w.component_type) or name)..'\n'..(#tc>1 and tc or '')
+          ..'サンプリングレート : '
+          ..(({[1]='16',[2]='22.05',[3]='24',[5]='32',[6]='44.1',[7]='48'})[w.sampling_rate] or ('(0x%02X)'):format(w.sampling_rate))..'kHz\n'
+      end
+    end
+    s=s..'\n'..(NetworkType(v.onid)=='地デジ' and '' or v.freeCAFlag and '有料放送\n\n' or '無料放送\n\n')
+    if v.eventRelayInfo and #v.eventRelayInfo.eventDataList>0 then
+      s=s..'イベントリレーあり : '
+      for i,w in ipairs(v.eventRelayInfo.eventDataList) do
+        local found=BinarySearch(edcb.GetServiceList() or {},w,CompareFields('onid',false,'tsid',false,'sid'))
+        s=s..('ID:%d(0x%04X)-%d(0x%04X)-%d(0x%04X)-%d(0x%04X)'):format(w.onid,w.onid,w.tsid,w.tsid,w.sid,w.sid,w.eid,w.eid)
+          ..(found and ' '..found.service_name or '')..'\n'
       end
       s=s..'\n'
     end
-    s=s..'\n'..(NetworkType(v.onid)=='地デジ' and '' or v.freeCAFlag and '有料放送\n' or '無料放送\n')
-      ..('OriginalNetworkID:%d(0x%04X)\n'):format(v.onid,v.onid)
+    s=s..('OriginalNetworkID:%d(0x%04X)\n'):format(v.onid,v.onid)
       ..('TransportStreamID:%d(0x%04X)\n'):format(v.tsid,v.tsid)
       ..('ServiceID:%d(0x%04X)\n'):format(v.sid,v.sid)
       ..('EventID:%d(0x%04X)\n'):format(v.eid,v.eid)
@@ -643,7 +839,7 @@ function DecorateUri(s)
             not r:find('^&[lg]t;',j) and not r:find('^&quot;',j) do
         j=j+1
       end
-      t=t..s:sub(spos(n),spos(i-h)-1)..'<a href="'..(h>0 and 'https://' or '')
+      t=t..s:sub(spos(n),spos(i-h)-1)..'<a rel="noreferrer" href="'..(h>0 and 'https://' or '')
         ..r:sub(i-h,j-1):gsub('&amp;','&'):gsub('&','&amp;')..'">'..s:sub(spos(i-h),spos(j)-1)..'</a>'
       n=j
       i=j-1
@@ -822,8 +1018,9 @@ end
 
 --コマンドラインの引数として使うパスを引用符で囲む
 --※Windowsでは引用符などパスとして不正な文字がpathに含まれていないことが前提
-function QuoteCommandArgForPath(path)
-  return WIN32 and '"'..path:gsub('[&%^]','^%0')..'"' or "'"..path:gsub("'","'\"'\"'").."'"
+--※Windowsでstartコマンドなどでネストされたコマンドの引数として使うときはnestedにする
+function QuoteCommandArgForPath(path,nested)
+  return WIN32 and '"'..(nested and path:gsub('[&^]','^%0') or path):gsub('%%','"%%"')..'"' or "'"..path:gsub("'","'\"'\"'").."'"
 end
 
 --SendTSTCPのストリーム取得用パイプのパス
@@ -914,13 +1111,95 @@ end
 function ReadToPcr(f,pid)
   for i=1,10000 do
     local buf=f:read(188)
-    if buf and #buf==188 and buf:byte(1)==0x47 then
-      --adaptation_field_control and adaptation_field_length and PCR_flag
-      if math.floor(buf:byte(4)/16)%4>=2 and buf:byte(5)>=5 and math.floor(buf:byte(6)/16)%2~=0 then
+    if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
+    local adaptation=math.floor(buf:byte(4)/16)%4
+    if adaptation>=2 then
+      --adaptation_field_length and PCR_flag
+      if buf:byte(5)>=5 and math.floor(buf:byte(6)/16)%2~=0 then
         local pcr=((buf:byte(7)*256+buf:byte(8))*256+buf:byte(9))*256+buf:byte(10)
         local pid2=buf:byte(2)%32*256+buf:byte(3)
         if not pid or pid==pid2 then
           return pcr,pid2,i*188
+        end
+      end
+    end
+  end
+  return nil
+end
+
+--MPEG-2映像のIフレームを取得する
+function GetIFrameVideoStream(f)
+  local exclude={}
+  local priorPid=8192
+  local videoPid=nil
+  local stream,pesRemain,headerRemain,seqState
+  local function findPictureCodingType(buf)
+    for i=1,#buf do
+      local b=buf:byte(i)
+      if (seqState<=1 or seqState==3) and b==0 or seqState==4 then
+        seqState=seqState+1
+      elseif seqState==2 and b<=1 then
+        if b==1 then
+          seqState=seqState+1
+        end
+      elseif seqState==5 then
+        seqState=-1
+        return math.floor(b/8)%8
+      else
+        seqState=0
+      end
+    end
+    return nil
+  end
+  for i=1,15000 do
+    local buf=f:read(188)
+    if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
+    local errorAndUnitStart=math.floor(buf:byte(2)/64)
+    local pid=buf:byte(2)%32*256+buf:byte(3)
+    if errorAndUnitStart<=1 and pid==videoPid or
+       errorAndUnitStart==1 and not videoPid then
+      if errorAndUnitStart==1 and videoPid then
+        if pesRemain==0 then
+          --PESがたまった
+          if seqState<0 then return table.concat(stream) end
+          exclude[pid]=true
+        end
+        videoPid=nil
+      end
+      local adaptation=math.floor(buf:byte(4)/16)%4
+      local adaptationLen=adaptation==1 and -1 or adaptation==3 and buf:byte(5) or 183
+      if adaptationLen>183 then break end
+      local pos=6+adaptationLen
+      --H.262のpicture_coding_typeが見つからないものは除外。複数候補ある場合はPIDが小さいほう
+      if not videoPid and not exclude[pid] and pid<=priorPid and pos<=180 and buf:find('^\0\0\1[\xE0-\xEF]',pos) then
+        --H.262/264/265 PES
+        videoPid=pid
+        stream={}
+        pesRemain=buf:byte(pos+4)*256+buf:byte(pos+5)
+        headerRemain=buf:byte(pos+8)
+        seqState=0
+        pos=pos+9
+      end
+      if videoPid and pos<=188 then
+        local n=math.min(189-pos,headerRemain)
+        headerRemain=headerRemain-n
+        pos=pos+n
+        if pos<=188 then
+          n=pesRemain>0 and math.min(189-pos,pesRemain) or 189-pos
+          stream[#stream+1]=buf:sub(pos,pos+n-1)
+          if seqState>=0 and findPictureCodingType(stream[#stream])~=1 and seqState<0 then
+            --Iフレームじゃない
+            priorPid=pid
+            videoPid=nil
+          elseif pesRemain>0 then
+            pesRemain=pesRemain-n
+            if pesRemain==0 then
+              --PESがたまった
+              if seqState<0 then return table.concat(stream) end
+              exclude[pid]=true
+              videoPid=nil
+            end
+          end
         end
       end
     end
@@ -1021,10 +1300,10 @@ function GetTotAndServiceID(f)
       for i=1,400000 do
         local buf=f:read(188)
         if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
+        local errorAndUnitStart=math.floor(buf:byte(2)/64)
         local adaptation=math.floor(buf:byte(4)/16)%4
         local adaptationLen=adaptation==1 and -1 or adaptation==3 and buf:byte(5) or 183
-        --payload_unit_start_indicator
-        if math.floor(buf:byte(2)/64)%2==1 and adaptationLen<183 then
+        if errorAndUnitStart==1 and adaptationLen<183 then
           local pid=buf:byte(2)%32*256+buf:byte(3)
           local pointer=7+adaptationLen+buf:byte(6+adaptationLen)
           local id=pointer<=188 and buf:byte(pointer)
@@ -1074,13 +1353,6 @@ function ReadJikkyoChunk(f)
     if not payload or #payload~=payloadSize then return nil end
   end
   return head..payload
-end
-
---jkrdlogに渡す実況のIDを取得する
-function GetJikkyoID(nid,sid)
-  --地上波のサービス種別とサービス番号はマスクする
-  local id=NetworkType(nid)=='地デジ' and 0xf0000+bit32.band(sid,0xfe78) or nid*65536+sid
-  return not JK_CHANNELS[id] and 'ns'..id or JK_CHANNELS[id]>0 and 'jk'..JK_CHANNELS[id]
 end
 
 --リトルエンディアンの値を取得する
@@ -1241,5 +1513,5 @@ end
 
 if not WIN32 then
   INDEX_ENABLE_SUSPEND=false
-  USE_LIVEJK=false
+  USE_LIVEJK=not not JKCNSL_PATH
 end

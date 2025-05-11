@@ -452,6 +452,11 @@ namespace EpgTimer
             itemlist.ForEach(item => item.searchInfo.notKey = Clipboard.GetText());
             return AutoAddChange(itemlist);
         }
+        public static bool EpgAutoAddChangeNote(List<EpgAutoAddData> itemlist)
+        {
+            itemlist.ForEach(item => item.searchInfo.note = Clipboard.GetText());
+            return AutoAddChange(itemlist);
+        }
         public static bool AutoAddAdd(IEnumerable<AutoAddData> itemlist, bool cautionMany = true)
         {
             return AutoAddCmdSend(itemlist, 0, cautionMany: cautionMany);
@@ -852,10 +857,15 @@ namespace EpgTimer
             }
             catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
-        public static EpgSearchKeyInfo SendAutoAddKey(IBasicPgInfo item, bool NotToggle = false, EpgSearchKeyInfo key = null)
+        public static EpgSearchKeyInfo SendAutoAddKey(IBasicPgInfo item, bool NotToggle = false, EpgSearchKeyInfo refkey = null)
         {
-            key = (key ?? Settings.Instance.SearchPresetList[0].Data).DeepClone();
+            var key = (refkey ?? Settings.Instance.SearchPresetList[0].Data).DeepClone();
             key.regExpFlag = 0;
+            if (refkey == null)
+            {
+                key.notContetFlag = 0;
+                key.contentList.Clear();
+            }
             if (item == null) return key;
 
             key.andKey = TrimEpgKeyword(item.DataTitle, NotToggle);
@@ -1064,19 +1074,6 @@ namespace EpgTimer
 
             list = list.Distinct().ToList();
             return IsEnabled == null ? list : list.FindAll(data => data.IsEnabled == IsEnabled);
-        }
-
-        public static RecFileInfo GetRecFileInfo(IAutoAddTargetData data)
-        {
-            List<RecFileInfo> list = GetRecFileInfoList(data);
-            return list == null ? null : list.FirstOrDefault();
-        }
-        public static List<RecFileInfo> GetRecFileInfoList(IAutoAddTargetData data)
-        {
-            if (data == null) return null;
-            List<RecFileInfo> list = null;
-            CommonManager.Instance.DB.RecFileUIDList.TryGetValue(data.CurrentPgUID(), out list);
-            return list ?? new List<RecFileInfo>();
         }
 
         public static void JumpTab(object target, CtxmCode trg_code)

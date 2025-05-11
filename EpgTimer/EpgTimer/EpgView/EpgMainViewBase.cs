@@ -12,11 +12,14 @@ namespace EpgTimer.EpgView
     {
         protected class StateMainBase : StateBase
         {
+            public DateTime? scrollTime = null;
+            public bool? isJumpDate = null;
+
             public StateMainBase() { }
             public StateMainBase(EpgMainViewBase view) : base(view) { scrollTime = view.GetScrollTime(); }
         }
-        //public override EpgViewState GetViewState() { return new StateMainBase(this); }
-        //protected new StateMainBase RestoreState { get { return restoreState as StateMainBase ?? new StateMainBase(); } }
+        public override EpgViewState GetViewState() { return new StateMainBase(this); }
+        protected new StateMainBase RestoreState { get { return restoreState as StateMainBase ?? new StateMainBase(); } }
 
         protected Dictionary<UInt64, ProgramViewItem> programList = new Dictionary<UInt64, ProgramViewItem>();
         protected List<ReserveViewItem> reserveList = new List<ReserveViewItem>();
@@ -265,18 +268,30 @@ namespace EpgTimer.EpgView
         protected int recIdx = -1;
         public override object MoveNextRecinfo(int direction, UInt64 id = 0, bool move = true, JumpItemStyle style = JumpItemStyle.MoveTo)
         {
-            return MenuUtil.GetRecFileInfo(ViewUtil.MoveNextReserve(ref recIdx, programView, recinfoList, ref clickPos, id, direction, move, style) as ReserveDataEnd);
+            return (ViewUtil.MoveNextReserve(ref recIdx, programView, recinfoList, ref clickPos, id, direction, move, style) as ReserveDataEnd).GetRecinfoFromPgUID();
         }
 
         /// <summary>表示位置を現在の時刻にスクロールする</summary>
         protected override void MoveNowTime()
         {
             DateTime current = RestoreState.scrollTime ?? GetViewTime(CommonUtil.EdcbNow);
-            //再描画のときは再描画前の時間かその近くに飛ぶが、過去番組移動の時は最初に出てくる同時刻に飛ぶ
-            if (RestoreState.isJumpDate == true)
+            //再描画のときは再描画前の時間かその近くに飛ぶが、過去番組絡みで移動する時は同じ曜日の同時刻に飛ぶ
+            if (RestoreState.isJumpDate == true && timeList.Any())
             {
-                int idx = timeList.FindIndex(time => time.Hour == current.Hour);
-                current = idx >= 0 ? timeList[idx] : ViewPeriod.Start.AddHours(current.Hour);
+                //timeListは歯抜けの場合もあるので、範囲だけ合わせて、突き合わせ表示はMoveTime()に任せる
+                //最初から範囲内にいるときは、そのまま表示する。
+                if (current < timeList.First() || timeList.Last() < current)
+                {
+                    int direction = current < timeList.First() ? 1 : -1;
+                    Func<int, bool> chkTime = d => d > 0 ? current < timeList.First() : timeList.Last() < current;
+                    while (chkTime(direction)) current += TimeSpan.FromDays(7 * direction);
+                    if (chkTime(-direction))//表示期間が1週間無い場合
+                    {
+                        current -= TimeSpan.FromDays(7 * direction);
+                        while (chkTime(direction)) current += TimeSpan.FromDays(direction);
+                        if (chkTime(-direction)) current -= TimeSpan.FromDays(direction);//表示期間が1日無い場合
+                    }
+                }
             }
             MoveTime(current, RestoreState.scrollTime == null ? -120 : 0);
         }
