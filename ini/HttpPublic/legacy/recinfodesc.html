@@ -68,6 +68,7 @@ if post then
   end
 end
 
+thumbs={''}
 edcb.htmlEscape=15
 v=edcb.GetRecFileInfo(id)
 if v then
@@ -110,12 +111,11 @@ if v then
         end
         if ext=='' then
           fsec,fsize=0,0
-          thumbs={}
           f=edcb.io.open(w.recFilePath,'rb')
           if f then
             fsec,fsize=GetDurationSec(f)
             if vtag<=0 then
-              thumbs=ThumbnailTemplate(f,fsec,fsize)
+              thumbs=ThumbnailTemplate(f,fsec,fsize,ref)
             end
             f:close()
           end
@@ -134,8 +134,7 @@ if v then
             ..'→<a href="recinfodesc.html?id='..v.id..ConstructTranscodeQueries(xq)
             ..'&amp;vtag='..(vtag==0 and '-1">Video' or '0">DL')..'</a>\n'
             ..TranscodeSettingTemplate(xq,fsec)
-            ..'</div></form>')
-          for j,w in ipairs(thumbs) do ct:Append(w) end
+            ..'</div></form>'..thumbs[1])
           if vtag==10 then
             src='xcode.lua?fname='..mg.url_encode(ref)..ConstructTranscodeQueries(xq)
             ct:Append('\n'..VideoWrapperBegin()
@@ -144,7 +143,7 @@ if v then
               ..VideoWrapperEnd()..'\n'
               ..'<div id="vidsrc" style="display:none">'..src..'</div>\n'..TranscodeScriptTemplate(false,xq.caption,xq.jikkyo,{ofssec=fsec*(xq.offset or 0)/100,fast=xq.fast}))
             if xq.tslive then
-              ct:Append(TsliveScriptTemplate())
+              ct:Append(TsliveScriptTemplate(xq.autoCinema))
             elseif ALLOW_HLS then
               ct:Append(HlsScriptTemplate('xcode.lua'))
             end
@@ -170,7 +169,7 @@ if v then
     ..'<input type="hidden" name="ctok" value="'..CsrfToken()..'">\n'
     ..'<input type="hidden" name="protect" value="'..(v.protectFlag and 'n' or 'y')..'">\n'
     ..'<button type="submit">'..(v.protectFlag and 'Yes' or 'No')..'</button></div></form></dd>\n'
-    ..(#v.programInfo>0 and '    <dt>番組情報</dt><dd>\n'..v.programInfo:gsub('\r?\n', '<br>\n')..'</dd>\n' or '')
+    ..(#v.programInfo>0 and '    <dt id="pginfo-term">番組情報</dt><dd id="pginfo-desc">'..v.programInfo:gsub('\r?\n', '<br>\n')..'</dd>\n' or '')
     ..(#v.errInfo>0 and '    <dt>エラーログ</dt><dd>\n'..v.errInfo:gsub('\r?\n', '<br>\n')..'</dd>\n' or '')
     ..'    <dt>-</dt><dd>\n'
     ..'<form method="POST" action="recinfo.html"><div>\n'
@@ -185,6 +184,21 @@ ct:Append([=[
 <div id="footer">
   <a href="recinfo.html]=]..(v and '?id='..v.id or '')..[=[">録画済み一覧</a>
 </div>
+]=])
+for i=2,#thumbs do ct:Append(thumbs[i]) end
+ct:Append([=[
+<script type="text/javascript">
+(function(){
+  var desc=document.getElementById("pginfo-desc");
+  if(desc&&desc.textContent){
+    var a=document.createElement("a");
+    a.download="a.program.txt";
+    a.href=URL.createObjectURL(new Blob(["\ufeff",desc.textContent],{endings:"native",type:"text/plain"}));
+    a.innerText="(DL)";
+    document.getElementById("pginfo-term").appendChild(a);
+  }
+})();
+</script>
 </body>
 </html>
 ]=])
