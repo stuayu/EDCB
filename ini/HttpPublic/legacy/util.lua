@@ -14,13 +14,16 @@ INDEX_ENABLE_SUSPEND=false
 --メニューの「システムスタンバイ」ボタンを「システム休止」にするかどうか
 INDEX_SUSPEND_USE_HIBERNATE=false
 
---「プロセス管理」に表示するプロセス名のリスト(非Windows専用)
+--「プロセス管理」に表示するプロセス名のリスト(Windowsでは末尾に".exe"が追加される)
 PROCESS_MANAGEMENT_LIST={
   'EpgDataCap_Bon',
   'ffmpeg',
   'nvencc',
+  'nvencc64',
   'qsvencc',
+  'qsvencc64',
   'vceencc',
+  'vceencc64',
   'jkcnsl',
   'jkrdlog',
 }
@@ -101,6 +104,7 @@ XCODE_FAST_RATES={
 --filter*FastFunc:倍速再生用、未定義でもよい。倍率に応じたオプションを返す関数を指定する
 --editorFast:単独で倍速再生にできないトランスコーダーの手前に置く編集コマンド。指定方法はxcoderと同様
 --editorOptionFastFunc:標準入出力ともにMPEG2-TSで倍速再生になるようにオプションを返す関数を指定する
+--autoCinema:TS-Live!方式専用。Cinema(逆テレシネ)モードを自動切り替え
 XCODE_OPTIONS={
   {
     --ffmpegの例。-b:vでおおよその最大ビットレートを決め、-qminで動きの少ないシーンのデータ量を節約する
@@ -158,7 +162,7 @@ XCODE_OPTIONS={
     --NVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/NVEncC',
     xcoder='NVEncC\\NVEncC64.exe|NVEncC\\NVEncC.exe|NVEncC64.exe|nvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -175,7 +179,7 @@ XCODE_OPTIONS={
     --QSVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -192,7 +196,7 @@ XCODE_OPTIONS={
     --QSVEncCの例。HEVC(未対応環境多め)。倍速再生にはffmpegも必要
     name='720p/hevc/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -209,6 +213,7 @@ XCODE_OPTIONS={
     --TS-Live!方式の例。そのまま転送。トランスコーダー不要(tsreadex.exeは必要)
     name='tslive',
     tslive=true,
+    autoCinema=true,
     xcoder='',
     option='',
     filter=':',
@@ -342,6 +347,7 @@ function GetTranscodeQueries(qs)
   return {
     option=option,
     tslive=XCODE_OPTIONS[option or 1].tslive,
+    autoCinema=XCODE_OPTIONS[option or 1].autoCinema,
     offset=GetVarInt(qs,'offset',0,100),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,
@@ -421,7 +427,7 @@ end
 
 function OnscreenButtonsScriptTemplate(xcode)
   return [=[
-<script src="script.js?ver=20250403"></script>
+<script src="script.js?ver=20250529"></script>
 <script>
 runOnscreenButtonsScript(]=]..(xcode and 'true' or 'false')..[=[);
 </script>
@@ -518,12 +524,13 @@ runHlsScript(]=]
 ]=]
 end
 
-function TsliveScriptTemplate()
+function TsliveScriptTemplate(autoCinema)
   return [=[
 <script src="aribb24.js"></script>
 <script src="ts-live.lua?t=.js"></script>
 <script>
 runTsliveScript(]=]
+  ..(autoCinema and 'true' or 'false')..','
   ..(ARIBB24_USE_SVG and 'true' or 'false')..',{'..ARIBB24_JS_OPTION..'}'..[=[
 );
 </script>
@@ -534,11 +541,12 @@ function ThumbnailTemplate(f,dur,fsize,fname)
   --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
   local r={'<div id="vid-thumbs"></div>',[=[
 <script type="text/javascript" src="ts-live.lua?t=-misc.js"></script>
+<script type="text/javascript" src="thumb_script.js?ver=20250529"></script>
 <script type="text/javascript">
 setTimeout(function(){
   createMiscWasmModule().then(function(mod){
-    var streams=[
-      ["]=]}
+    runThumbnailScript(mod,[
+        ["]=]}
   if EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') then
     for i=1,math.min(#THUMBNAILS,5) do
       local sec=math.floor(THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i])
@@ -547,89 +555,13 @@ setTimeout(function(){
         local stream=GetIFrameVideoStream(f)
         if stream then
           r[#r+1]=mg.base64_encode(stream)
-          r[#r+1]='",'..sec..'],\n      ["'
+          r[#r+1]='",'..sec..'],\n        ["'
         end
       end
     end
   end
   if #r<=2 then return {''} end
-  r[#r]=r[#r]:gsub('].*','')..[=[]
-    ];
-    var flipTimer=0;
-    var pushed=null;
-    var thumbs=document.getElementById("vid-thumbs");
-    var div=document.createElement("div");
-    div.style.display="none";
-    thumbs.appendChild(div);
-    for(var i=0;i<streams.length;i++){
-      var b=atob(streams[i][0]);
-      var u=new Uint8Array(b.length);
-      for(var j=0;j<b.length;j++){
-        u[j]=b.charCodeAt(j);
-      }
-      var buffer=mod.getGrabberInputBuffer(u.length);
-      buffer.set(u);
-      var frame=mod.grabFirstFrame(u.length);
-      if(!frame)continue;
-      (function(){
-        var canvas=document.createElement("canvas");
-]=]..(fname and [=[
-        var sec=streams[i][1];
-        function flip(){
-          var myTimer=flipTimer;
-          var xhr=new XMLHttpRequest();
-          xhr.open("GET","grabber.lua?fname=]=]..mg.url_encode(fname)..[=[&ofssec="+(sec+5));
-          xhr.responseType="arraybuffer";
-          xhr.onloadend=function(){
-            if(xhr.status!=200||!xhr.response){
-              if(flipTimer==myTimer)flipTimer=setTimeout(flip,3000);
-              return;
-            }
-            var buffer=mod.getGrabberInputBuffer(xhr.response.byteLength);
-            buffer.set(new Uint8Array(xhr.response));
-            var frame=mod.grabFirstFrame(xhr.response.byteLength);
-            if(frame){
-              canvas.width=frame.width;
-              canvas.height=frame.height;
-              canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
-            }
-            sec+=5;
-            if(flipTimer==myTimer){
-              div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
-              flipTimer=setTimeout(flip,500);
-            }
-          };
-          xhr.send();
-        }
-        canvas.onmouseenter=function(){
-          var ra=canvas.getBoundingClientRect();
-          var rb=thumbs.getBoundingClientRect();
-          div.style.left=ra.x-rb.x+"px";
-          div.style.bottom=rb.bottom-ra.bottom+"px";
-          div.innerText=Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
-          div.style.display=null;
-          clearTimeout(flipTimer);
-          flipTimer=setTimeout(flip,1000);
-        };
-        canvas.onmouseleave=function(){
-          clearTimeout(flipTimer);
-          flipTimer=0;
-          div.style.display="none";
-          pushed=null;
-        };
-        canvas.onclick=function(){
-          pushed=pushed==canvas?null:canvas;
-          if(pushed)canvas.onmouseenter();
-          else canvas.onmouseleave();
-        };
-]=] or '')..[=[
-        canvas.width=frame.width;
-        canvas.height=frame.height;
-        canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
-        canvas.className="thumb-]=]..math.min(#THUMBNAILS,5)..[=[";
-        thumbs.appendChild(canvas);
-      })();
-    }
+  r[#r]=r[#r]:gsub('].*','')..']\n      ],'..math.min(#THUMBNAILS,5)..','..(fname and '"'..mg.url_encode(fname)..'"' or 'null')..[=[);
   });
 },0);
 </script>
