@@ -29,7 +29,7 @@ namespace EpgTimer
             //追加時の選択用
             mainWindow.autoAddView.epgAutoAddView.ViewUpdated += SearchWindow.UpdatesViewSelection;
         }
-        public SearchWindow(EpgAutoAddData data = null, AutoAddMode mode = AutoAddMode.Find)
+        public SearchWindow(EpgAutoAddData data = null, AutoAddMode mode = AutoAddMode.Find, string searchWord = null)
             : base(data, mode)
         {
             InitializeComponent();
@@ -129,6 +129,9 @@ namespace EpgTimer
 
                 //ステータスバーの登録
                 StatusManager.RegisterStatusbar(this.statusBar, this);
+
+                //初期検索ワードの設定。条件節は無くても後でdataが読み込まれるので同じだけど、念のため。
+                if (data == null) searchKeyView.comboBox_andKey.Text = searchWord;
             }
             catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
@@ -429,9 +432,9 @@ namespace EpgTimer
     public enum AutoAddMode { Find, NewAdd, Change }
     public class AutoAddWindow<T, S> : HideableWindow<T> where S : AutoAddData
     {
-        protected UInt64 dataID = 0;
-        protected override UInt64 DataID { get { return dataID; } }
-        protected override IEnumerable<KeyValuePair<UInt64, object>> DataRefList { get { return AutoAddData.GetDBManagerList(typeof(S)).Select(d => new KeyValuePair<UInt64, object>(d.DataID, d)); } }
+        protected ulong dataID = 0;
+        protected override ulong DataID { get { return dataID; } }
+        protected override IEnumerable<KeyValuePair<ulong, object>> DataRefList { get { return AutoAddData.GetDBManagerList(typeof(S)).Select(d => new KeyValuePair<ulong, object>(d.DataID, d)); } }
         //予約ウィンドウからのリスト検索、ジャンプ関連の対応
         public AutoAddWinListView DataListView { get; protected set; }
         public class AutoAddWinListView : DataItemViewBase

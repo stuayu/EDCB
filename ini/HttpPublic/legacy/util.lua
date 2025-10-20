@@ -14,6 +14,9 @@ INDEX_ENABLE_SUSPEND=false
 --メニューの「システムスタンバイ」ボタンを「システム休止」にするかどうか
 INDEX_SUSPEND_USE_HIBERNATE=false
 
+--配色について'dark'=強制ダークモード、'light'=強制ライトモード、''=環境に従う
+COLOR_SCHEME=''
+
 --「プロセス管理」に表示するプロセス名のリスト(Windowsでは末尾に".exe"が追加される)
 PROCESS_MANAGEMENT_LIST={
   'EpgDataCap_Bon',
@@ -50,7 +53,7 @@ EPG_TIME_COLUMN=3
 --番組表の番組を絞り込みたいときはメモ欄かNOTキーワードの先頭を"#EPG_CUST_1"にした自動EPG予約を作る
 
 --ライブラリに表示するフォルダをドキュメントルートから'/'区切りの相対パスで指定
---指定フォルダとその1階層下のフォルダにあるメディアファイルまでが表示対象
+--指定フォルダとその3階層下のフォルダにあるメディアファイルまでが表示対象
 LIBRARY_LIST={
   'video',
 }
@@ -73,7 +76,7 @@ THUMBNAILS={
 --シーク中にサムネイル画像を表示するかどうか。TS-Live!モジュールが必要
 THUMBNAIL_ON_SEEK=true
 
---HLS(HTTP Live Streaming)を許可するかどうか。する場合はtsmemseg.exeを用意すること。IE非対応
+--HLS(HTTP Live Streaming)を許可するかどうか。する場合はtsmemseg.exeを用意すること
 ALLOW_HLS=true
 --ネイティブHLS非対応環境でもhls.jsを使ってHLS再生するかどうか
 ALWAYS_USE_HLS=true
@@ -108,9 +111,9 @@ XCODE_FAST_RATES={
 XCODE_OPTIONS={
   {
     --ffmpegの例。-b:vでおおよその最大ビットレートを決め、-qminで動きの少ないシーンのデータ量を節約する
-    name='360p/h264/ffmpeg',
+    name='432p/h264/ffmpeg',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 1888k -qmin 23 -maxrate 4M -bufsize 4M -preset veryfast $FILTER -s 640x360 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 2400k -qmin 23 -maxrate 5M -bufsize 5M -preset veryfast $FILTER -s 768x432 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
     filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
@@ -134,10 +137,22 @@ XCODE_OPTIONS={
     outputHls={'m2t','-f mpegts -'},
   },
   {
-    --ffmpegのh264_qsvは環境によって異常にビットレートが高くなったりしてあまり質が良くない。要注意
     name='720p/h264/ffmpeg-qsv',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_qsv -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    filter='-g 120 -vf yadif=0:-1:1',
+    filterCinema='-g 96 -vf pullup -r 24000/1001',
+    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
+    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
+    captionNone='-sn',
+    captionHls='-map 0:s? -scodec copy',
+    output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
+    outputHls={'m2t','-f mpegts -'},
+  },
+  {
+    name='720p/h264/ffmpeg-amf',
+    xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_amf -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset balanced $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
     filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
@@ -210,8 +225,25 @@ XCODE_OPTIONS={
     outputHls={'m2t','-f mpegts -o -'},
   },
   {
+    --VCEEncCの例。倍速再生にはffmpegも必要。あまり良い例ではない。ffmpegのh264_amfのほうが安定している雰囲気
+    name='720p/h264/VCEEncC',
+    xcoder='VCEEncC\\VCEEncC64.exe|VCEEncC\\VCEEncC.exe|VCEEncC64.exe|vceencc.exe',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avsw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset balanced $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    audioStartAt=1,
+    filter='--gop-len 120 --interlace tff --vpp-afs preset=default',
+    filterCinema='--gop-len 96 --interlace tff --vpp-afs preset=cinema,24fps=true',
+    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-afs preset=default' end,
+    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-afs preset=cinema,24fps=true' end,
+    editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
+    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
+    captionNone='',
+    captionHls='--sub-copy',
+    output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
+    outputHls={'m2t','-f mpegts -o -'},
+  },
+  {
     --TS-Live!方式の例。そのまま転送。トランスコーダー不要(tsreadex.exeは必要)
-    name='tslive',
+    name='TS-Live!',
     tslive=true,
     autoCinema=true,
     xcoder='',
@@ -241,15 +273,21 @@ VIDEO_VOLUME=nil
 
 --字幕表示のオプション https://github.com/monyone/aribb24.js#options
 ARIBB24_JS_OPTION=[=[
-  normalFont:'"Rounded M+ 1m for ARIB","Yu Gothic Medium",sans-serif',
+  normalFont:'"Rounded M+ 1m for ARIB","Kosugi Maru",sans-serif',
   drcsReplacement:true
 ]=]
 
---字幕表示にSVGRendererを使うかどうか。描画品質が上がる(ただし一部ブラウザで背景に線が入る)。IE非対応
+--字幕表示にSVGRendererを使うかどうか。描画品質が上がる(ただし一部ブラウザで背景に線が入る)
 ARIBB24_USE_SVG=false
 
---データ放送表示機能を使うかどうか。トランスコード中に表示する場合はpsisiarc.exeを用意すること。IE非対応
+--データ放送表示機能を使うかどうか。トランスコード中に表示する場合はpsisiarc.exeを用意すること
 USE_DATACAST=true
+
+--データ放送の郵便番号(7桁)の初期値。例えば東京都西新宿は'1600023'。''のとき未設定
+NVRAM_ZIP=''
+
+--データ放送の県域コード(1～50)の初期値。例えば東京都は14。0のとき未設定。県域とコードの対応はメニュー→NVRAM設定→地域を参照
+NVRAM_REGION=0
 
 --ライブ実況表示機能を使うかどうか
 --利用にはJKCNSL_PATHを設定するか、実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
@@ -385,10 +423,10 @@ function VideoWrapperEnd()
     ..'<div id="jikkyo-chats"></div></div></div></div>'
 end
 
-function TranscodeSettingTemplate(xq,fsec)
+function TranscodeSettingTemplate(xq,forDL,fsec)
   local s='<select name="option">'
   for i,v in ipairs(XCODE_OPTIONS) do
-    if v.tslive or not ALLOW_HLS or not ALWAYS_USE_HLS or v.outputHls then
+    if forDL or v.tslive or not ALLOW_HLS or not ALWAYS_USE_HLS or v.outputHls then
       s=s..'<option value="'..i..'"'..Selected((xq.option or XCODE_SELECT_OPTION)==i)..'>'..EdcbHtmlEscape(v.name)
     end
   end
@@ -425,16 +463,18 @@ function TranscodeSettingTemplate(xq,fsec)
   return s
 end
 
-function OnscreenButtonsScriptTemplate(xcode)
+function OnscreenButtonsScriptTemplate()
   return [=[
-<script src="script.js?ver=20250529"></script>
+<script src="script.js?ver=20250907"></script>
 <script>
-runOnscreenButtonsScript(]=]..(xcode and 'true' or 'false')..[=[);
+runOnscreenButtonsScript();
 </script>
 ]=]
 end
 
 function WebBmlScriptTemplate(label)
+  local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
+  local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
   return USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
@@ -449,7 +489,23 @@ function WebBmlScriptTemplate(label)
 </div>
 <label class="video-side-item"><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
 <script src="web_bml_play_ts.js"></script>
-]=] or ''
+]=]..(not zip and prefecture==0 and '' or [=[
+<script>
+(function(){
+  var prefix="nvram_prefix=receiverinfo%2F";
+]=]..(not zip and '' or [=[
+  if(!localStorage.getItem(prefix+"zipcode")){
+    localStorage.setItem(prefix+"zipcode",btoa("]=]..zip..[=["));
+  }
+]=])..(prefecture==0 and '' or [=[
+  if(!localStorage.getItem(prefix+"regioncode")){
+    localStorage.setItem(prefix+"prefecture",btoa(String.fromCharCode(]=]..prefecture..[=[)));
+    localStorage.setItem(prefix+"regioncode",btoa(String.fromCharCode(]=]..GetEwsRegionCode(prefecture)..'>>8,'..GetEwsRegionCode(prefecture)..[=[&0xff)));
+  }
+]=])..[=[
+})();
+</script>
+]=]) or ''
 end
 
 function JikkyoScriptTemplate(live,shiftable,jikkyo)
@@ -464,15 +520,15 @@ runJikkyoScript(]=]..(shiftable and 'true' or 'false')..','..JK_COMMENT_HEIGHT..
 ]=] or ''
 end
 
-function VideoScriptTemplate()
-  return OnscreenButtonsScriptTemplate(false)..WebBmlScriptTemplate('data.psc')..JikkyoScriptTemplate(false,true,XCODE_CHECK_JIKKYO)..[=[
+function VideoScriptTemplate(ists)
+  return OnscreenButtonsScriptTemplate()..WebBmlScriptTemplate(ists and 'data' or 'data.psc')..JikkyoScriptTemplate(false,true,XCODE_CHECK_JIKKYO)..[=[
 <label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>CC.vtt</label>
 <script src="aribb24.js"></script>
 <script>
 ]=]..(VIDEO_MUTED and 'vid.e.muted=true;\n' or '')..(VIDEO_VOLUME and 'vid.e.volume='..VIDEO_VOLUME..';\n' or '')..[=[
 runVideoScript(]=]
   ..(ARIBB24_USE_SVG and 'true' or 'false')..',{'..ARIBB24_JS_OPTION..'},'
-  ..(USE_DATACAST and 'true' or 'false')..','
+  ..(USE_DATACAST and (ists and '2' or '1') or '0')..','
   ..(JKRDLOG_PATH and 'true' or 'false')..[=[
 );
 </script>
@@ -480,16 +536,17 @@ runVideoScript(]=]
 end
 
 function TranscodeScriptTemplate(live,caption,jikkyo,params)
-  return OnscreenButtonsScriptTemplate(true)..WebBmlScriptTemplate('data')..JikkyoScriptTemplate(live,false,jikkyo)..[=[
+  return OnscreenButtonsScriptTemplate()..WebBmlScriptTemplate('data')..JikkyoScriptTemplate(live,false,jikkyo)..[=[
 <label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>CC</label>
 ]=]..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox">live</label>\n' or '')
   ..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
 <script src="ts-live.lua?t=-misc.js"></script>
-<span class="thumb-popup"><canvas id="vid-thumb" style="display:none"></canvas><input id="vid-seek" type="range" style="display:none"></span>
+<span id="vid-seek"><span class="thumb-popup"><canvas style="display:none"></canvas><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
 ]=] or [=[
-<input id="vid-seek" type="range" style="display:none">
+<span id="vid-seek"><input type="range" step="0.1" style="display:none" list="vid-seek-marker">
 ]=])..[=[
 <span id="vid-seek-status" style="visibility:hidden">&emsp; &emsp; 88m88s→|%</span>
+</span><datalist id="vid-seek-marker"><option></datalist>
 <input id="vid-volume" class="video-side-item" type="range" style="display:none">
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none">🔊</button>
 <script>
@@ -1039,21 +1096,35 @@ function UintCounterDiff(a,b)
   return (a+0x100000000-b)%0x100000000
 end
 
+--TSパケットヘッダを解析する
+function ParseTsPacket(ts,buf,i)
+  i=i or 1
+  if not buf or #buf<i+187 or buf:byte(i)~=0x47 then return false end
+  local b=buf:byte(i+1)
+  ts.err=b>127
+  ts.unitStart=b%128>63
+  ts.pid=b%32*256+buf:byte(i+2)
+  ts.adaptation=math.floor(buf:byte(i+3)/16)%4
+  return true
+end
+
+--PCR(45000Hz)があれば取得する
+function GetPcrFromTsPacket(adaptation,buf,i)
+  i=i or 1
+  --adaptation_field_length and PCR_flag
+  return adaptation>=2 and buf:byte(i+4)>=5 and buf:byte(i+5)%32>15 and
+    ((buf:byte(i+6)*256+buf:byte(i+7))*256+buf:byte(i+8))*256+buf:byte(i+9)
+end
+
 --PCRまで読む
 function ReadToPcr(f,pid)
+  local ts={}
   for i=1,10000 do
     local buf=f:read(188)
-    if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
-    local adaptation=math.floor(buf:byte(4)/16)%4
-    if adaptation>=2 then
-      --adaptation_field_length and PCR_flag
-      if buf:byte(5)>=5 and math.floor(buf:byte(6)/16)%2~=0 then
-        local pcr=((buf:byte(7)*256+buf:byte(8))*256+buf:byte(9))*256+buf:byte(10)
-        local pid2=buf:byte(2)%32*256+buf:byte(3)
-        if not pid or pid==pid2 then
-          return pcr,pid2,i*188
-        end
-      end
+    if not ParseTsPacket(ts,buf) then break end
+    local pcr=GetPcrFromTsPacket(ts.adaptation,buf)
+    if not ts.err and pcr and (not pid or pid==ts.pid) then
+      return pcr,ts.pid,i*188
     end
   end
   return nil
@@ -1061,6 +1132,7 @@ end
 
 --MPEG-2映像のIフレームを取得する
 function GetIFrameVideoStream(f)
+  local ts={}
   local exclude={}
   local priorPid=8192
   local videoPid=nil
@@ -1085,27 +1157,23 @@ function GetIFrameVideoStream(f)
   end
   for i=1,15000 do
     local buf=f:read(188)
-    if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
-    local errorAndUnitStart=math.floor(buf:byte(2)/64)
-    local pid=buf:byte(2)%32*256+buf:byte(3)
-    if errorAndUnitStart<=1 and pid==videoPid or
-       errorAndUnitStart==1 and not videoPid then
-      if errorAndUnitStart==1 and videoPid then
+    if not ParseTsPacket(ts,buf) then break end
+    if not ts.err and (ts.pid==videoPid or ts.unitStart and not videoPid) then
+      if ts.unitStart and videoPid then
         if pesRemain==0 then
           --PESがたまった
           if seqState<0 then return table.concat(stream) end
-          exclude[pid]=true
+          exclude[ts.pid]=true
         end
         videoPid=nil
       end
-      local adaptation=math.floor(buf:byte(4)/16)%4
-      local adaptationLen=adaptation==1 and -1 or adaptation==3 and buf:byte(5) or 183
+      local adaptationLen=ts.adaptation==1 and -1 or ts.adaptation==3 and buf:byte(5) or 183
       if adaptationLen>183 then break end
       local pos=6+adaptationLen
       --H.262のpicture_coding_typeが見つからないものは除外。複数候補ある場合はPIDが小さいほう
-      if not videoPid and not exclude[pid] and pid<=priorPid and pos<=180 and buf:find('^\0\0\1[\xE0-\xEF]',pos) then
+      if not videoPid and not exclude[ts.pid] and ts.pid<=priorPid and pos<=180 and buf:find('^\0\0\1[\xE0-\xEF]',pos) then
         --H.262/264/265 PES
-        videoPid=pid
+        videoPid=ts.pid
         stream={}
         pesRemain=buf:byte(pos+4)*256+buf:byte(pos+5)
         headerRemain=buf:byte(pos+8)
@@ -1121,14 +1189,14 @@ function GetIFrameVideoStream(f)
           stream[#stream+1]=buf:sub(pos,pos+n-1)
           if seqState>=0 and findPictureCodingType(stream[#stream])~=1 and seqState<0 then
             --Iフレームじゃない
-            priorPid=pid
+            priorPid=ts.pid
             videoPid=nil
           elseif pesRemain>0 then
             pesRemain=pesRemain-n
             if pesRemain==0 then
               --PESがたまった
               if seqState<0 then return table.concat(stream) end
-              exclude[pid]=true
+              exclude[ts.pid]=true
               videoPid=nil
             end
           end
@@ -1228,18 +1296,15 @@ function GetTotAndServiceID(f)
   if f:seek('set') then
     local pcr,pcrPid=ReadToPcr(f)
     if pcr then
-      local tot,nid,sid=nil,nil,nil
+      local ts,tot,nid,sid={},nil,nil,nil
       for i=1,400000 do
         local buf=f:read(188)
-        if not buf or #buf~=188 or buf:byte(1)~=0x47 then break end
-        local errorAndUnitStart=math.floor(buf:byte(2)/64)
-        local adaptation=math.floor(buf:byte(4)/16)%4
-        local adaptationLen=adaptation==1 and -1 or adaptation==3 and buf:byte(5) or 183
-        if errorAndUnitStart==1 and adaptationLen<183 then
-          local pid=buf:byte(2)%32*256+buf:byte(3)
+        if not ParseTsPacket(ts,buf) then break end
+        local adaptationLen=ts.adaptation==1 and -1 or ts.adaptation==3 and buf:byte(5) or 183
+        if not ts.err and ts.unitStart and adaptationLen<183 then
           local pointer=7+adaptationLen+buf:byte(6+adaptationLen)
           local id=pointer<=188 and buf:byte(pointer)
-          if pid==0 and pointer+13<=188 and id==0x00 then
+          if ts.pid==0 and pointer+13<=188 and id==0x00 then
             --PAT
             local sectionLen=buf:byte(pointer+2)
             sid=buf:byte(pointer+8)*256+buf:byte(pointer+9)
@@ -1249,10 +1314,10 @@ function GetTotAndServiceID(f)
             if sectionLen<13 or sid==0 then
               sid=nil
             end
-          elseif pid==16 and pointer+4<=188 and id==0x40 then
+          elseif ts.pid==16 and pointer+4<=188 and id==0x40 then
             --NIT
             nid=buf:byte(pointer+3)*256+buf:byte(pointer+4)
-          elseif pid==20 and pointer+7<=188 and (id==0x70 or id==0x73) and not tot then
+          elseif ts.pid==20 and pointer+7<=188 and (id==0x70 or id==0x73) and not tot then
             --TDT,TOT
             local pcr2=ReadToPcr(f,pcrPid)
             if not pcr2 then break end
@@ -1295,6 +1360,16 @@ function GetLeNumber(buf,pos,len)
 end
 
 DOCTYPE_HTML4_STRICT='<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
+
+--既定のHTMLヘッダの内容
+function DefaultHeadContents()
+  return [=[
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="initial-scale=1">
+<link rel="stylesheet" type="text/css" href="default.css">
+]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
+  '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')
+end
 
 --HTTP日付の文字列を取得する
 function ImfFixdate(t)
@@ -1441,6 +1516,13 @@ end
 --※サーバに変更を加える要求(POSTに限らない)を処理する前にこれを呼ぶべき
 function AssertCsrf(qs)
   assert(mg.get_var(qs,'ctok')==CsrfToken() or mg.get_var(qs,'ctok')==CsrfToken(nil,-1))
+end
+
+--県域コード(1～50)に対応する緊急情報信号の地域符号を返す
+function GetEwsRegionCode(prefecture)
+  --地域符号(Hex3桁x50)
+  local codes='16b16b4675d4758ac6e4c1aec69e3898b64b1c7aac56c4ce5396a692dd4a9d2a65a5a9662dcce459acb2674a93396d2331b2b5b31b98e629b419d2e362d959a2b8a7c8dd1cd45372aacd45'
+  return tonumber(codes:sub(prefecture*3-2,prefecture*3),16)
 end
 
 if not WIN32 then

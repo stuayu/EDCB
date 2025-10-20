@@ -35,7 +35,7 @@ hlsMsn=GetVarInt(query,'_HLS_msn',1)
 hlsPart=GetVarInt(query,'_HLS_part',0)
 
 -- クエリのハッシュをキーとし、同一キーアクセスは出力中のインデックスファイルを返す
-hlsKey=hlsKey and n and mg.md5('view:'..hlsKey..(onid and ':nwtv' or ':')..n..':'..option.xcoder..':'..option.option..':'..audio2..':'..filter..':'..caption..':'..output[2])
+hlsKey=hlsKey and n and mg.md5('view:'..hlsKey..(onid and ':nwtv' or ':')..n)
 
 -- フラグメント長の目安
 partConfigSec=0.8
@@ -519,19 +519,16 @@ elseif hlsKey then
   ct:Finish()
   mg.write(ct:Pop(Response(200,'application/vnd.apple.mpegurl','utf-8',ct.len)..'\r\n'))
 else
-  mg.write(Response(200,mg.get_mime_type(fname))..'Content-Disposition: filename='..fname..'\r\n\r\n')
+  mg.write(Response(200,mg.get_mime_type(fname))..'Content-Disposition: attachment; filename='..fname..'\r\n\r\n')
   if mg.request_info.request_method~='HEAD' then
     while true do
       buf=f:read(188*128)
-      if buf and #buf~=0 then
-        if not mg.write(buf) then
-          -- キャンセルされた
-          mg.cry('canceled')
-          break
-        end
-      else
+      if not buf or #buf==0 then
         -- 終端に達した
-        mg.cry('end')
+        break
+      end
+      if not mg.write(buf) then
+        -- キャンセルされた
         break
       end
     end

@@ -22,6 +22,7 @@ fastRate=fastRate and XCODE_FAST_RATES[fastRate] or 1
 filter=fastRate~=1 and (GetVarInt(query,'cinema')==1 and option.filterCinemaFastFunc and option.filterCinemaFastFunc(fastRate) or
                         option.filterFastFunc and option.filterFastFunc(fastRate))
 fastRate=filter and fastRate or 1
+throttle=GetVarInt(query,'throttle')==1
 filter=filter or (GetVarInt(query,'cinema')==1 and option.filterCinema or option.filter or '')
 hlsKey=mg.get_var(query,'hls')
 hls4=GetVarInt(query,'hls4',0) or 0
@@ -37,11 +38,11 @@ reload=mg.get_var(query,'reload')
 loadKey=reload or mg.get_var(query,'load') or ''
 
 -- クエリのハッシュをキーとし、同一キーアクセスは出力中のインデックスファイルを返す
-hlsKey=hlsKey and mg.md5('xcode:'..hlsKey..':'..fpath..':'..option.xcoder..':'..option.option..':'..(ofssec or offset)..':'..audio2..':'..filter..':'..caption..':'..output[2])
+hlsKey=hlsKey and fpath and mg.md5('xcode:'..hlsKey..':'..fpath)
 
 -- トランスコードを開始し、HLSの場合はインデックスファイルの情報、それ以外はMP4などのストリーム自体を返す
 function OpenTranscoder()
-  local searchName='xcode-'..mg.md5(fpath..':'..loadKey):sub(17)
+  local searchName='xcode-'..mg.md5(loadKey):sub(17)
   if XCODE_SINGLE then
     -- トランスコーダーの親プロセスのリストを作る
     local pids=nil
@@ -253,7 +254,8 @@ if fpath then
           offset=0
           if ofssec~=0 then
             fsec,fsize=GetDurationSec(f)
-            if SeekSec(f,ofssec,fsec,fsize) then
+            -- 応答性向上のためPSI/SIは6秒(チャンク2つ)だけ手前から読む
+            if SeekSec(f,ofssec-(psidata and 6 or 0),fsec,fsize) then
               offset=f:seek('cur',0) or 0
             end
           end
@@ -263,7 +265,8 @@ if fpath then
           if offset~=0 then
             fsec,fsize=GetDurationSec(f)
             ofssec=math.floor(fsec*offset/100)
-            if offset~=100 and SeekSec(f,ofssec,fsec,fsize) then
+            -- 応答性向上のためPSI/SIは6秒(チャンク2つ)だけ手前から読む
+            if offset~=100 and SeekSec(f,ofssec-(psidata and 6 or 0),fsec,fsize) then
               offset=f:seek('cur',0) or 0
             else
               offset=math.floor(fsize*offset/100/188)*188
@@ -315,9 +318,12 @@ elseif psidata or jikkyo then
     failed=false
     repeat
       if psidata then
-        -- 3/fastRate秒間隔でチャンクを読めば主ストリームと等速になる
-        buf,trailerSize,trailerRemainSize=ReadPsiDataChunk(f.psi,trailerSize,trailerRemainSize)
-        failed=not buf or not mg.write(mg.base64_encode(buf))
+        -- 3/fastRate秒間隔でチャンクを読めば主ストリームと等速になる。初回だけ3つ読む
+        for i=(trailerSize==0 and 1 or 3),3 do
+          buf,trailerSize,trailerRemainSize=ReadPsiDataChunk(f.psi,trailerSize,trailerRemainSize)
+          failed=not buf or not mg.write(mg.base64_encode(buf))
+          if failed then break end
+        end
         if failed then break end
       end
       if jikkyo and type(f.jk)=='string' then
@@ -363,19 +369,62 @@ elseif hlsKey then
   ct:Finish()
   mg.write(ct:Pop(Response(200,'application/vnd.apple.mpegurl','utf-8',ct.len)..'\r\n'))
 else
-  mg.write(Response(200,mg.get_mime_type(fname))..'Content-Disposition: filename='..fname..'\r\n\r\n')
+  mg.write(Response(200,mg.get_mime_type(fname))..'Content-Disposition: attachment; filename='..fname..'\r\n\r\n')
   if mg.request_info.request_method~='HEAD' then
+    bufRemain=''
+    throttle=throttle and fname:find('%.m2t$')
+    ts={}
+    baseTime=0
+    basePcr=0
     while true do
-      buf=f:read(188*128)
-      if buf and #buf~=0 then
-        if not mg.write(buf) then
-          -- キャンセルされた
-          mg.cry('canceled')
+      buf=f:read(188*128-#bufRemain)
+      if not buf or #buf==0 then
+        -- 終端に達した
+        break
+      end
+      if throttle then
+        -- 常に188バイト単位にする
+        if #bufRemain~=0 then
+          buf=bufRemain..buf
+          bufRemain=''
+        end
+        if #buf%188~=0 then
+          bufRemain=buf:sub(-(#buf%188))
+          buf=buf:sub(1,#buf-#bufRemain)
+        end
+        -- 送信速度をfastRateまでに制御
+        for i=1,#buf,188 do
+          if not ParseTsPacket(ts,buf,i) then
+            ts=nil
+            break
+          end
+          pcr=GetPcrFromTsPacket(ts.adaptation,buf,i)
+          if not ts.err and pcr then
+            timeDiff=math.floor(os.time()*fastRate-baseTime)
+            pcrDiff=math.floor(UintCounterDiff(pcr,basePcr)/45000)
+            if math.abs(timeDiff)>60 or pcrDiff>60 then
+              -- 制御をリセット。30秒ほど先読みを許す
+              baseTime=os.time()*fastRate+(baseTime==0 and 0 or 30)
+              basePcr=pcr
+            else
+              if timeDiff>=0 then
+                baseTime=baseTime+math.min(pcrDiff,timeDiff)
+                basePcr=(basePcr+math.min(pcrDiff,timeDiff)*45000)%0x100000000
+              end
+              if pcrDiff>timeDiff+30 then
+                edcb.Sleep(1000/fastRate)
+              end
+            end
+            break
+          end
+        end
+        if not ts then
+          mg.cry('throttling failed')
           break
         end
-      else
-        -- 終端に達した
-        mg.cry('end')
+      end
+      if #buf~=0 and not mg.write(buf) then
+        -- キャンセルされた
         break
       end
     end

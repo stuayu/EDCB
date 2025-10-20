@@ -16,8 +16,8 @@ namespace EpgTimer
     /// </summary>
     public partial class RecInfoDescWindow : RecInfoDescWindowBase
     {
-        protected override UInt64 DataID { get { return recInfo.ID; } }
-        protected override IEnumerable<KeyValuePair<UInt64, object>> DataRefList { get { return CommonManager.Instance.DB.RecFileInfo.Select(d => new KeyValuePair<UInt64, object>(d.Key, d.Value)); } }
+        protected override ulong DataID { get { return recInfo.ID; } }
+        protected override IEnumerable<KeyValuePair<ulong, object>> DataRefList { get { return CommonManager.Instance.DB.RecFileInfo.Select(d => new KeyValuePair<ulong, object>(d.Key, d.Value)); } }
         protected override DataItemViewBase DataView { get { return base.DataView ?? mainWindow.recInfoView; } }
 
         private RecFileInfo recInfo = new RecFileInfo();
@@ -74,7 +74,7 @@ namespace EpgTimer
                 grid_protect.ToolTipOpening += (sender, e) => grid_protect.ToolTip =
                         ("" + MenuBinds.GetInputGestureTextView(EpgCmds.ProtectChange, mBinds.View) + "\r\nプロテクト設定/解除").Trim();
 
-                button_rename_opne.Click += ViewUtil.OpenFileNameDialog(textBox_recFilePath, false, "", "", true, "", false);
+                button_rename_open.Click += ViewUtil.OpenFileNameDialog(textBox_recFilePath, false, "", "", true, "", false, true);
                 if (CommonManager.Instance.NWMode == false)
                 {
                     textBox_recFilePath.TextChanged += textBox_recFilePath_TextChanged;
