@@ -42,7 +42,7 @@ jobs:
             git push -u origin my-build
           else
             echo "'my-build' exists on fork. Preparing to merge..."
-            git fetch origin my-build:my-build
+            git fetch origin my-build
           fi
 
       # 5) upstream/my-build をフォーク側 my-build へマージ
