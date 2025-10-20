@@ -1,0 +1,62 @@
+name: Merge upstream into fork (my-build)
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'   # 毎週月曜 00:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # push に必要
+
+jobs:
+  merge-upstream-my-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) チェックアウト（まずはデフォルトブランチ）
+      - name: Checkout repository (default branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 浅い履歴だと merge で問題になるため全履歴を取得
+      # 参考: actions/checkout の履歴取得仕様。[1](https://github.com/actions/checkout)
+      # 2) Git ユーザー設定
+      - name: Configure Git user
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # 3) upstream を追加・対象ブランチのみ fetch
+      - name: Add upstream and fetch 'my-build'
+        run: |
+          git remote add upstream https://github.com/tkntrec/EDCB.git
+          git fetch upstream my-build --no-tags
+
+      # 4) フォーク側に 'my-build' ブランチが無ければ upstream から作成
+      - name: Ensure fork branch 'my-build' exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! git ls-remote --exit-code --heads origin my-build >/dev/null 2>&1; then
+            echo "Fork has no 'my-build'. Creating from upstream/my-build..."
+            git checkout -b my-build upstream/my-build
+            git push -u origin my-build
+          else
+            echo "'my-build' exists on fork. Preparing to merge..."
+            git fetch origin my-build:my-build
+          fi
+
+      # 5) upstream/my-build をフォーク側 my-build へマージ
+      - name: Merge upstream/my-build into fork/my-build
+        id: merge
+        run: |
+          set -e
+          git checkout my-build
+          # fast-forward 可能なら自動で進み、分岐があれば merge commit を作る
+          # コンフリクトが出た場合は非破壊で失敗させる（次のステップで push をスキップ）
+          git merge --no-edit upstream/my-build
+
+      # 6) 変更が取り込まれたら push
+      - name: Push merged changes
+        if: ${{ success() }}
+        run: |
+          git push origin my-build
