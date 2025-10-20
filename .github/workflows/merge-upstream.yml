@@ -53,7 +53,7 @@ jobs:
           git checkout my-build
           # fast-forward 可能なら自動で進み、分岐があれば merge commit を作る
           # コンフリクトが出た場合は非破壊で失敗させる（次のステップで push をスキップ）
-          git merge --no-edit upstream/my-build
+          git merge -X theirs --no-edit upstream/my-build
 
       # 6) 変更が取り込まれたら push
       - name: Push merged changes
