@@ -291,8 +291,10 @@ BOOL CEpgDataCap_BonDlg::OnInitDialog()
 		}
 	}
 
-	if( serviceIndex >= 0 ){
+	if( serviceIndex >= 0 && this->iniView != FALSE ){
 		//チャンネル変更
+		//iniView==FALSE(-noview指定)の場合はEpgTimerSrvからパイプ経由でチャンネルが
+		//指定されるため、ここでの選局をスキップして二重チューニングを回避する
 		if( SelectService(this->serviceList[serviceIndex]) ){
 			if( this->iniONID >= 0 && this->iniTSID >= 0 && this->iniSID >= 0 && initChgWait > 0 ){
 				SleepForMsec(initChgWait);
