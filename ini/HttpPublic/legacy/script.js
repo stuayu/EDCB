@@ -429,7 +429,7 @@ const adjustVideoMaxWidth=()=>{
   }
 };
 
-const runOnscreenButtonsScript=()=>{
+const runPlaybackScript=(isTrusted)=>{
   vid={e:document.getElementById("video"),unmute(){(vid.c||vid.e).muted=false;}};
   vid.initSrc=vid.e.dataset.src||vid.e.getAttribute("src");
   if(vid.e.tagName=="CANVAS"){
@@ -439,10 +439,38 @@ const runOnscreenButtonsScript=()=>{
     vid.volume=1;
     vid.c=vid;
   }
+  const btnUnmute=document.getElementById("vid-unmute");
+  if(btnUnmute.dataset.initialMuted&&(!isTrusted||btnUnmute.dataset.initialMuted!="auto")){
+    (vid.c||vid.e).muted=true;
+  }
+  if(btnUnmute.dataset.initialVolume){
+    (vid.c||vid.e).volume=+btnUnmute.dataset.initialVolume;
+  }
+  if((vid.c||vid.e).muted){
+    btnUnmute.style.display=null;
+    btnUnmute.onclick=()=>{
+      vid.unmute();
+      btnUnmute.style.display="none";
+    };
+  }
+  const cbDatacast=document.getElementById("cb-datacast");
+  if(cbDatacast){
+    const prefix="nvram_prefix=receiverinfo%2F";
+    if(cbDatacast.dataset.absentZip&&!localStorage.getItem(prefix+"zipcode")){
+      localStorage.setItem(prefix+"zipcode",btoa(cbDatacast.dataset.absentZip));
+    }
+    if(cbDatacast.dataset.absentPrefecture&&!localStorage.getItem(prefix+"prefecture")){
+      localStorage.setItem(prefix+"prefecture",btoa(String.fromCharCode(cbDatacast.dataset.absentPrefecture)));
+    }
+    if(cbDatacast.dataset.absentRegion&&!localStorage.getItem(prefix+"regioncode")){
+      localStorage.setItem(prefix+"regioncode",btoa(String.fromCharCode(cbDatacast.dataset.absentRegion>>8,cbDatacast.dataset.absentRegion&0xff)));
+    }
+  }
   vcont=document.getElementById("vid-cont");
   vfull=document.getElementById("vid-full");
   vwrap=document.getElementById("vid-wrap");
   window.addEventListener("load",adjustVideoMaxWidth);
+  window.addEventListener("my-load",adjustVideoMaxWidth);
   window.addEventListener("resize",adjustVideoMaxWidth);
   let btn=document.createElement("button");
   btn.type="button";
@@ -459,7 +487,18 @@ const runOnscreenButtonsScript=()=>{
   bexit.className="exit-control";
   bexit.appendChild(btn);
   if(document.fullscreenEnabled||document.webkitFullscreenEnabled){
+    let showCursor=()=>{};
+    if(vid.c){
+      let t=0;
+      showCursor=()=>{
+        vfull.classList.remove("hide-cursor-on-fullscreen");
+        clearTimeout(t);
+        t=setTimeout(()=>{vfull.classList.add("hide-cursor-on-fullscreen");},3000);
+      };
+      vfull.onmousemove=showCursor;
+    }
     vfull[document.fullscreenEnabled?"onfullscreenchange":"onwebkitfullscreenchange"]=()=>{
+      showCursor();
       const vseek=document.getElementById("vid-seek");
       if(vseek){
         const vseekMarker=document.getElementById("vid-seek-marker");
@@ -547,6 +586,18 @@ const runOnscreenButtonsScript=()=>{
     }
   };
   hideOnscreenButtons(false);
+  if(document.getElementById("cb-jikkyo")){
+    runJikkyoScript();
+  }
+  if(vid.c){
+    runTranscodeScript();
+    runTsliveScript();
+  }else if(document.getElementById("vid-seek")){
+    runTranscodeScript();
+    if(vid.e.dataset.hls)runHlsScript();
+  }else{
+    runVideoScript();
+  }
 };
 
 //Global variables available after runJikkyoScript() is called.
@@ -557,11 +608,40 @@ let addJikkyoMessage;
 let toggleJikkyo;
 let shiftJikkyo=()=>{};
 
-const runJikkyoScript=(commentHeight,commentDuration,replaceTag)=>{
+const runJikkyoScript=()=>{
   let danmaku=null;
   const comm=document.getElementById("jikkyo-comm");
+  if(comm.dataset.shiftable){
+    for(const sec of [15,1,-1,-15]){
+      const btn=document.createElement("button");
+      btn.type="button";
+      btn.innerText=(sec>0?"+":"")+sec;
+      btn.onclick=()=>{shiftJikkyo(sec);};
+      comm.insertBefore(btn,comm.firstChild);
+    }
+  }
+  document.getElementById("jikkyo-config").previousElementSibling.onclick=()=>{
+    document.getElementById("jikkyo-config").classList.toggle("display");
+  };
   const chats=document.getElementById("jikkyo-chats");
   let checkScrollID=0;
+  const cbJikkyo=document.getElementById("cb-jikkyo");
+  let customReplace=[];
+  try{
+    customReplace=JSON.parse(decodeURIComponent(cbJikkyo.dataset.customReplaceJson));
+    for(const rep of customReplace){
+      rep.regex=new RegExp(rep.pattern,rep.flags);
+    }
+  }catch(e){
+    console.warn("customReplaceJson:",e);
+    customReplace=[];
+  }
+  const replaceTag=(tag)=>{
+    for(const rep of customReplace){
+      tag=tag.replace(rep.regex,rep.replace);
+    }
+    return tag;
+  };
   const cbJikkyoOnscr=document.getElementById("cb-jikkyo-onscr");
   const onclickJikkyoOnscr=()=>{
     if(danmaku&&comm.style.visibility!="hidden"){
@@ -573,7 +653,6 @@ const runJikkyoScript=(commentHeight,commentDuration,replaceTag)=>{
   cbJikkyoOnscr.onclick=onclickJikkyoOnscr;
   checkJikkyoDisplay=()=>{
     if(danmaku){
-      const cbJikkyo=document.getElementById("cb-jikkyo");
       if(!cbJikkyo.checked){
         danmaku.hide();
         comm.style.visibility="hidden";
@@ -613,8 +692,8 @@ const runJikkyoScript=(commentHeight,commentDuration,replaceTag)=>{
         callback(){},
         error(){},
         apiBackend:{read(opt){opt.success([]);}},
-        height:commentHeight,
-        duration:commentDuration,
+        height:+cbJikkyo.dataset.commentHeight,
+        duration:+cbJikkyo.dataset.commentDuration,
         paddingTop:10,
         paddingBottom:10,
         unlimited:false,
@@ -732,7 +811,7 @@ const runJikkyoScript=(commentHeight,commentDuration,replaceTag)=>{
   };
 };
 
-const runVideoScript=(aribb24UseSvg,aribb24Option)=>{
+const runVideoScript=()=>{
   const inputFile=document.getElementById("input-file");
   if(inputFile){
     inputFile.onchange=()=>{
@@ -756,7 +835,13 @@ const runVideoScript=(aribb24UseSvg,aribb24Option)=>{
         if(!ret)return;
         for(const pes of ret){dataList.push({pts:cue.startTime,pes});}
       }
-      cap=aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+      let aribb24Option=null;
+      try{
+        aribb24Option=JSON.parse(decodeURIComponent(cbCaption.dataset.aribb24OptionJson));
+      }catch(e){
+        console.warn("aribb24OptionJson:",e);
+      }
+      cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
       cap.attachMedia(vid.e);
       document.getElementById("label-caption").style.display="inline";
       if(!cbCaption.checked){cap.hide();}
@@ -774,7 +859,7 @@ const runVideoScript=(aribb24UseSvg,aribb24Option)=>{
   }
   const cbDatacast=document.getElementById("cb-datacast");
   if(cbDatacast){
-    if(cbDatacast.innerText=="data"){
+    if(cbDatacast.parentNode.textContent=="data"){
       let onDataStream=null;
       let onDataStreamError=null;
       let reopen=false;
@@ -1004,7 +1089,12 @@ const runVideoScript=(aribb24UseSvg,aribb24Option)=>{
   };
 };
 
-const runTranscodeScript=(postCommentQuery)=>{
+const runTranscodeScript=()=>{
+  const vseek=document.getElementById("vid-seek");
+  vid.ofssec=+vseek.dataset.initialOfssec;
+  vid.fast=+vseek.dataset.initialFast;
+  const cbLive=document.getElementById("cb-live");
+  const postCommentQuery=cbLive&&cbLive.dataset.postCommentQuery;
   let currentAbsTime;
   if(vid.c){
     //Playback rate is controlled on client-side.
@@ -1036,7 +1126,6 @@ const runTranscodeScript=(postCommentQuery)=>{
           duration=seekable;
           interval=Math.max(diffs[0],diffs[1],diffs[2],diffs[3],diffs[4])+1;
           if(vid.e.currentTime<duration-interval*2-3&&Date.now()-lastseek>10000){
-            const cbLive=document.getElementById("cb-live");
             if(cbLive&&cbLive.checked){
               vid.e.currentTime=duration-interval;
               lastseek=Date.now();
@@ -1048,22 +1137,14 @@ const runTranscodeScript=(postCommentQuery)=>{
     };
     setCheckLivePosition(checkLivePosition);
   }
-  const vseek=document.getElementById("vid-seek");
   const rangeSeek=document.querySelector("#vid-seek input");
-  const vseekStatus=document.getElementById("vid-seek-status");
-  let vseekStatusMaxWidth=-1;
   const adjustSeekbarWidth=()=>{
-    if(vseekStatusMaxWidth<0){
-      //Estimation using initial text width
-      vseekStatusMaxWidth=vseekStatus.offsetWidth*2;
-      vseekStatus.innerText="";
-      vseekStatus.style.visibility=null;
-    }
-    let othersWidth=vseekStatusMaxWidth;
+    let othersWidth=0;
     for(const e of document.querySelectorAll(".video-side-item")){othersWidth+=e.offsetWidth;}
     rangeSeek.style.width=Math.max(1-othersWidth/window.innerWidth,0.3)*100+"%";
   };
   window.addEventListener("load",adjustSeekbarWidth);
+  window.addEventListener("my-load",adjustSeekbarWidth);
   window.addEventListener("resize",adjustSeekbarWidth);
   vid.fastParam="";
   let openSubStream=()=>{};
@@ -1305,10 +1386,10 @@ const runTranscodeScript=(postCommentQuery)=>{
   if(voffset){
     const vselect=document.querySelector('#vid-form select[name="offset"]');
     const vthumb=document.querySelector("#vid-seek canvas");
+    const vstatus=document.getElementById("vid-seek-status");
     let thumbTimer=0;
     let thumbXhr=null;
-    const rangeSeekSec=()=>{
-      const n=rangeSeek.value;
+    const rangeSeekSec=n=>{
       const i=Math.floor(n);
       return Math.floor((vselect.options[Math.min(i+1,100)].dataset.sec||-1)*(n-i)-
                         (vselect.options[Math.min(i,100)].dataset.sec||-1)*(n-i-1));
@@ -1316,28 +1397,43 @@ const runTranscodeScript=(postCommentQuery)=>{
     const formatSec=sec=>{
       return Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
     };
+    let mouseX=null;
     rangeSeek.ontouchend=rangeSeek.onmouseleave=()=>{
+      mouseX=null;
       vseek.classList.remove("active");
-      vseekStatus.innerText="";
       if(vthumb)vthumb.style.display="none";
+      vstatus.style.display="none";
+      vstatus.classList.remove("follow-thumb");
     };
-    rangeSeek.oninput=()=>{
-      vseek.classList.add("active");
-      vseekStatus.innerText=formatSec(currentAbsTime())+"\u2192"+
-        (rangeSeekSec()>=0&&vid.seekWithoutTransition?formatSec(rangeSeekSec()):
-           vselect.options[Math.floor(rangeSeek.value)].textContent.match(/^(?:\d+m\d+s)?/).m[0])+
-        "|"+Math.floor(rangeSeek.value)+"%";
+    const setLeft=()=>{
+      const e=vstatus.classList.contains("follow-thumb")?vthumb:vstatus;
+      const x=(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX)-e.offsetWidth/2;
+      e.style.left=Math.floor(x)+"px";
+      e.style.left=Math.floor(x-Math.min(e.getBoundingClientRect().left,0)-Math.max(e.getBoundingClientRect().right-window.innerWidth,0))+"px";
+      vstatus.style.left=e.style.left;
+    };
+    const popup=()=>{
+      //Adjust the offset between slider and mouse.
+      const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
+      const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
+      vstatus.innerText=formatSec(currentAbsTime())+"\u2192"+
+        (rangeSeekSec(n)>=0&&vid.seekWithoutTransition?formatSec(rangeSeekSec(n)):
+           vselect.options[Math.floor(n)].textContent.match(/^(?:\d+m\d+s)?/).m[0])+
+        "|"+Math.floor(n)+"%";
+      vstatus.style.display=null;
+      setLeft();
       if(vthumb&&vid.grabFirstFrame){
         clearTimeout(thumbTimer);
         thumbTimer=setTimeout(()=>{
-          if(!vseek.classList.contains("active")||thumbXhr)return;
+          if((mouseX==null&&!vseek.classList.contains("active"))||thumbXhr)return;
           //Get thumbnail of seek position.
           thumbXhr=new XMLHttpRequest();
-          thumbXhr.open("GET","grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+
-            (rangeSeekSec()>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec():"&offset="+Math.floor(rangeSeek.value)));
+          const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
+          const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
+          thumbXhr.open("GET","grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+(rangeSeekSec(n)>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec(n):"&offset="+Math.floor(n)));
           thumbXhr.responseType="arraybuffer";
           thumbXhr.onloadend=()=>{
-            if(vseek.classList.contains("active")&&thumbXhr.status==200&&thumbXhr.response){
+            if((mouseX!=null||vseek.classList.contains("active"))&&thumbXhr.status==200&&thumbXhr.response){
               const buffer=vid.getGrabberInputBuffer(thumbXhr.response.byteLength);
               buffer.set(new Uint8Array(thumbXhr.response));
               const frame=vid.grabFirstFrame(thumbXhr.response.byteLength);
@@ -1346,6 +1442,8 @@ const runTranscodeScript=(postCommentQuery)=>{
                 vthumb.height=frame.height;
                 vthumb.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
                 vthumb.style.display=null;
+                vstatus.classList.add("follow-thumb");
+                setLeft();
               }
             }
             thumbXhr=null;
@@ -1354,16 +1452,25 @@ const runTranscodeScript=(postCommentQuery)=>{
         },thumbTimer?200:0);
       }
     };
+    rangeSeek.oninput=()=>{
+      vseek.classList.add("active");
+      popup();
+    };
     rangeSeek.onchange=()=>{
       vselect.options[Math.floor(rangeSeek.value)].selected=true;
-      if(rangeSeekSec()>=0&&vid.seekWithoutTransition){
-        vid.ofssec=rangeSeekSec();
+      if(rangeSeekSec(rangeSeek.value)>=0&&vid.seekWithoutTransition){
+        vid.ofssec=Math.max(rangeSeekSec(rangeSeek.value)-1,0);
         openSubStream();
         vid.seekWithoutTransition();
+        mouseX=null;
         vseek.classList.remove("active");
       }else{
         document.querySelector('#vid-form button[type="submit"]').click();
       }
+    };
+    rangeSeek.onmousemove=e=>{
+      if(mouseX!=null&&!vseek.classList.contains("active"))popup();
+      mouseX=e.offsetX;
     };
     (vid.c||vid.e).ontimeupdate=()=>{
       const sec=currentAbsTime();
@@ -1420,14 +1527,6 @@ const runTranscodeScript=(postCommentQuery)=>{
       vid.e.src=(vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc).replace("&load=","&reload=")+"&ofssec="+vid.ofssec+"&count="+(++swtCount);
     };
   }
-  if((vid.c||vid.e).muted){
-    const btnUnmute=document.getElementById("vid-unmute");
-    btnUnmute.style.display=null;
-    btnUnmute.onclick=()=>{
-      vid.unmute();
-      btnUnmute.style.display="none";
-    };
-  }
   seekVideo=(sec)=>{
     if(vid.seekWithoutTransition){
       vid.ofssec=Math.floor(sec);
@@ -1437,14 +1536,20 @@ const runTranscodeScript=(postCommentQuery)=>{
   };
 };
 
-const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,hlsMp4Query)=>{
+const runHlsScript=()=>{
   let cap=null;
   const cbCaption=document.getElementById("cb-caption");
   const onclickCaption=()=>{
     if(cbCaption.checked){
       if(!cap){
-        aribb24Option.enableAutoInBandMetadataTextTrackDetection=!alwaysUseHls||!Hls.isSupported();
-        cap=aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+        let aribb24Option=null;
+        try{
+          aribb24Option=JSON.parse(decodeURIComponent(cbCaption.dataset.aribb24OptionJson));
+        }catch(e){
+          console.warn("aribb24OptionJson:",e);
+        }
+        aribb24Option.enableAutoInBandMetadataTextTrackDetection=!vid.e.dataset.alwaysUseHls||!Hls.isSupported();
+        cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
         cap.attachMedia(vid.e);
       }
       cap.show();
@@ -1453,7 +1558,7 @@ const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,
     }
     document.querySelector('#vid-form input[name="caption"]').value=cbCaption.checked?"1":"0";
   };
-  if(alwaysUseHls){
+  if(vid.e.dataset.alwaysUseHls){
     vid.seekWithoutTransition=null;
     onclickCaption();
     cbCaption.onclick=onclickCaption;
@@ -1463,7 +1568,8 @@ const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,
     vid.e.poster="loading.png";
     waitForHlsStart(vid.initSrc+
       //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
-      hlsQuery+(/Android.+Firefox/i.test(navigator.userAgent)?"":hlsMp4Query),postQuery,200,500,()=>{vid.e.poster=null;},src=>{
+      "&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
+      "ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
       if(Hls.isSupported()){
         const hls=new Hls();
         hls.loadSource(src);
@@ -1497,7 +1603,8 @@ const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,
           hls.detachMedia();
           waitForHlsStart((vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc).replace("&load=","&reload=")+"&ofssec="+vid.ofssec+
             //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
-            hlsQuery.replace("&hls=","&hls="+(++swtCount)+"_")+(/Android.+Firefox/i.test(navigator.userAgent)?"":hlsMp4Query),postQuery,200,500,()=>{vid.e.poster=null;},src=>{
+            "&hls="+(++swtCount)+"_"+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
+            "ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
             hls.loadSource(src);
             hls.attachMedia(vid.e);
             vid.seekWithoutTransition=swt;
@@ -1518,7 +1625,7 @@ const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,
       const cbLive=document.getElementById("cb-live");
       if(cbLive)cbLive.checked=true;
       vid.e.poster="loading.png";
-      waitForHlsStart(vid.initSrc+hlsQuery+hlsMp4Query,postQuery,200,500,()=>{vid.e.poster=null;},src=>{
+      waitForHlsStart(vid.initSrc+"&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4?"":"&hls4="+vid.e.dataset.hlsMp4),"ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
         vid.e.src=src;
       });
     }else{
@@ -1527,7 +1634,7 @@ const runHlsScript=(aribb24UseSvg,aribb24Option,alwaysUseHls,postQuery,hlsQuery,
   }
 };
 
-const runTsliveScript=(autoCinema,aribb24UseSvg,aribb24Option)=>{
+const runTsliveScript=()=>{
   const vbitrate=document.getElementById("vid-bitrate");
   let bitrateStart=null;
   let bitrateTotal=0;
@@ -1596,7 +1703,13 @@ const runTsliveScript=(autoCinema,aribb24UseSvg,aribb24Option)=>{
   const onclickCaption=()=>{
     if(cbCaption.checked){
       if(!cap){
-        cap=aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+        let aribb24Option=null;
+        try{
+          aribb24Option=JSON.parse(decodeURIComponent(cbCaption.dataset.aribb24OptionJson));
+        }catch(e){
+          console.warn("aribb24OptionJson:",e);
+        }
+        cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
         cap.attachMedia(null,vcont);
       }
       cap.show();
@@ -1695,6 +1808,7 @@ const runTsliveScript=(autoCinema,aribb24UseSvg,aribb24Option)=>{
         mod.setDualMonoMode(cbAudio2.checked?1:0);
         cbAudio2.onclick=()=>{mod.setDualMonoMode(cbAudio2.checked?1:0);};
         const cbCinema=document.querySelector('#vid-form input[name="cinema"]');
+        let autoCinema=!!vid.e.dataset.initialAutoCinema;
         if(mod.setDetelecineMode){
           //0=never,1=force,2=auto
           mod.setDetelecineMode(autoCinema?2:cbCinema.checked?1:0);
@@ -1704,6 +1818,9 @@ const runTsliveScript=(autoCinema,aribb24UseSvg,aribb24Option)=>{
           };
         }else{
           autoCinema=false;
+        }
+        if(vid.e.dataset.deinterlace&&mod.setDeinterlace){
+          mod.setDeinterlace(vid.e.dataset.deinterlace);
         }
         mod.setStatsCallback(stats=>{
           if(statsTime!=stats[stats.length-1].time){
