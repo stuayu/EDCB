@@ -103,6 +103,7 @@ XCODE_FAST_RATES={
 --xcoder:トランスコーダーのToolsフォルダからの相対パス。'|'で複数候補を指定可。見つからなければ最終候補にパスが通っているとみなす
 --       Windows以外では".exe"が除去されて最終候補のみ参照される
 --option:$OUTPUTは必須、再生時に適宜置換される。標準入力からMPEG2-TSを受け取るようにオプションを指定する
+--poster:初期画像のサイズとメッセージ。省略時は'1280x720,Loading...'
 --filter(Cinema):等速再生用、filterCinemaは未定義でもよい。特別に':'とするとトランスコードを省略してそのまま出力する
 --filter*FastFunc:倍速再生用、未定義でもよい。倍率に応じたオプションを返す関数を指定する
 --editorFast:単独で倍速再生にできないトランスコーダーの手前に置く編集コマンド。指定方法はxcoderと同様
@@ -115,6 +116,7 @@ XCODE_OPTIONS={
     name='432p/h264/ffmpeg',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
     option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 2400k -qmin 23 -maxrate 5M -bufsize 5M -preset veryfast $FILTER -s 768x432 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    poster='768x432,Loading...',
     filter='-g 120 -vf yadif=0:-1:1',
     filterCinema='-g 96 -vf pullup -r 24000/1001',
     filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
@@ -243,6 +245,19 @@ XCODE_OPTIONS={
     outputHls={'m2t','-f mpegts -o -'},
   },
   {
+    --音声のみの例
+    name='Audio-only/ffmpeg',
+    xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
+    option='-f mpegts -analyzeduration 1M -i - -vn $FILTER -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 96k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    poster='1280x720,Audio-only',
+    filter='',
+    filterFastFunc=function(rate) return '-af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
+    captionNone='-sn',
+    captionHls='-map 0:s? -scodec copy',
+    output={'mp4','-f mp4 -movflags empty_moov -frag_duration 4M -'},
+    outputHls={'m2t','-f mpegts -'},
+  },
+  {
     --TS-Live!方式の例。そのまま転送。トランスコーダー不要(tsreadex.exeは必要)
     name='TS-Live!',
     tslive=true,
@@ -359,6 +374,24 @@ JK_CUSTOM_REPLACE_JSON=[=[
 ]
 ]=]
 
+--チャプターファイルの拡張子の候補。.chapterはTVTestのTvtPlay、.m4a.mp4はMP4のテキストトラック、ほかはNero/OGM形式とみなす。最終候補が@のときはファイル名に含まれるTvtPlay形式を読み込む
+CHAPTER_EXTENSIONS='.chapter|.chapters.txt|.m4a|.mp4|@'
+
+--メディアファイルと同じ場所にこの名前のフォルダがあるときチャプターファイルをまずここから探す(''のときメディアファイルと同じ場所のみ)
+CHAPTERS_FOLDER_NAME=''
+--CHAPTERS_FOLDER_NAME='chapters'
+
+--開始チャプターとみなすチャプター名のパターン(Luaの正規表現)
+CHAPTER_IN='^i'
+
+--終了チャプターとみなすチャプター名のパターン(Luaの正規表現)
+CHAPTER_OUT='^o'
+
+--動画の編集位置のカット秒数・ミリ秒数とみなすチャプター名のパターン(Luaの正規表現)
+--例えばエンコード時に60秒カットした動画があるとき、編集位置のチャプター名に"_cut=60s"が含まれていれば実況ログの表示タイミングを自動で60秒ずらす
+CHAPTER_CUT_SEC='_cut=([0-9]+)s'
+CHAPTER_CUT_MSEC='_cut=([0-9]+)ms'
+
 --トランスコードするプロセスを1つだけに制限するかどうか(並列処理できる余裕がシステムにない場合など)
 XCODE_SINGLE=false
 --ログを"log"フォルダに保存するかどうか
@@ -392,10 +425,11 @@ function GetTranscodeQueries(qs)
   local option=GetVarInt(qs,'option',1,#XCODE_OPTIONS)
   return {
     option=option,
+    poster=XCODE_OPTIONS[option or 1].poster,
     tslive=XCODE_OPTIONS[option or 1].tslive,
     autoCinema=XCODE_OPTIONS[option or 1].autoCinema,
     deinterlace=(XCODE_OPTIONS[option or 1].deinterlace or ''):match('^[0-9A-Za-z]+$'),
-    offset=GetVarInt(qs,'offset',0,100),
+    offset=GetVarInt(qs,'offset',-100000,100),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,
     --0は明示的に等速を表す
@@ -445,7 +479,7 @@ function VideoWrapperEnd(jkList,shiftable)
   return s
 end
 
-function TranscodeSettingTemplate(xq,forDL,fsec)
+function TranscodeSettingTemplate(xq,forDL,fsec,chapters)
   local s='<select name="option">'
   local esc=edcb.htmlEscape
   edcb.htmlEscape=15
@@ -458,6 +492,18 @@ function TranscodeSettingTemplate(xq,forDL,fsec)
   s=s..'</select>\n'
   if fsec then
     s=s..'<select name="offset">'
+    if fsec>0 and chapters then
+      edcb.htmlEscape=15
+      local sel=nil
+      for i,v in ipairs(chapters) do
+        local sec=math.floor(v.pos/1000<fsec and v.pos/1000 or fsec)
+        --便利のため1秒だけ引く
+        sel=sel or sec>1 and xq.offset==1-sec and i
+        s=s..'<option'..(v.name:lower():find(CHAPTER_IN) and ' data-chapter-in="1"' or v.name:lower():find(CHAPTER_OUT) and ' data-chapter-out="1"' or '')
+          ..' value="'..math.min(1-sec,0)..'"'..Selected(sel==i)..' data-sec="'..sec..('">%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
+      end
+      edcb.htmlEscape=esc
+    end
     for i=0,100 do
       s=s..'<option value="'..i..'"'..Selected((xq.offset or 0)==i)..(fsec>0 and ' data-sec="'..math.floor(fsec*i/100)..'"' or '')..'>'
         ..(fsec>0 and ('%dm%02ds'):format(math.floor(fsec*i/100/60),fsec*i/100%60)..(i%5==0 and '|'..i..'%' or '') or i..'%')
@@ -492,7 +538,7 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
   local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
   local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
   return [=[
-<script type="text/javascript" src="script.js?ver=20260215" defer></script>
+<script type="text/javascript" src="script.js?ver=20260305" defer></script>
 ]=]..(USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
@@ -521,19 +567,33 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
 ]=]
 end
 
-function VideoScriptTemplate(ists)
-  return PlaybackScriptTemplate(ists and 'data' or 'data.psc',false,XCODE_CHECK_JIKKYO,XCODE_CHECK_CAPTION,'CC.vtt')..[=[
+function VideoScriptTemplate(ists,chapters)
+  local s=PlaybackScriptTemplate(ists and 'data' or 'data.psc',false,XCODE_CHECK_JIKKYO,XCODE_CHECK_CAPTION,'CC.vtt')..[=[
 <script type="text/javascript" src="aribb24.js" defer></script>
+]=]
+  if chapters then
+    s=s..'<select id="vid-chapters">'
+    local esc=edcb.htmlEscape
+    edcb.htmlEscape=15
+    for i,v in ipairs(chapters) do
+      s=s..'<option'..(v.name:lower():find(CHAPTER_IN) and ' data-chapter-in="1"' or v.name:lower():find(CHAPTER_OUT) and ' data-chapter-out="1"' or '')
+        ..(v.pos==math.huge and ' disabled value="">END ' or ' value="'..(v.pos/1000)..('">%dm%02ds '):format(math.floor(v.pos/60000),math.floor(v.pos/1000)%60))..EdcbHtmlEscape(v.name)
+    end
+    edcb.htmlEscape=esc
+    s=s..'</select>\n'
+  end
+  return s..[=[
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
   ..(VIDEO_MUTED and ' data-initial-muted="1"' or '')..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
 ]=]
 end
 
-function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
-  return PlaybackScriptTemplate('data',live,jikkyo,caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
+function TranscodeScriptTemplate(live,xq,params)
+  return PlaybackScriptTemplate('data',live,xq.jikkyo,xq.caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
     ..(USE_LIVEJK and ' data-post-comment-query="ctok='..CsrfToken('comment.lua')..'&amp;n='..params.n..(params.id and '&amp;id='..params.id or '')..'"' or '')..'>live</label>\n' or '')..[=[
-<span id="vid-seek" data-initial-ofssec="]=]..math.floor(params.ofssec or 0)..'" data-initial-fast="'..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..[=[">
-<span class="thumb-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
+<span id="vid-seek" data-initial-ofssec="]=]..math.floor((live or not xq.offset) and 0 or xq.offset<0 and -xq.offset or params.fsec*xq.offset/100)
+  ..'" data-initial-fast="'..(xq.fast and xq.fast~=0 and XCODE_FAST_RATES[xq.fast] or 1)..[=[">
+<span id="vid-seek-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
 <canvas style="display:none"></canvas><script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>]=] or '')..[=[
 <div id="vid-seek-status" style="display:none"></div><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
 </span><datalist id="vid-seek-marker"><option></datalist>
@@ -541,9 +601,9 @@ function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
   ..(XCODE_VIDEO_MUTED and ' data-initial-muted="'..(XCODE_VIDEO_MUTED=='auto' and 'auto' or 1)..'"' or '')
   ..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
-]=]..((tslive or ALLOW_HLS) and [=[
+]=]..((xq.tslive or ALLOW_HLS) and [=[
 <script type="text/javascript" src="aribb24.js" defer></script>
-]=] or '')..(tslive and [=[
+]=] or '')..(xq.tslive and [=[
 <script type="text/javascript" src="ts-live.lua?t=.js" defer></script>
 ]=] or ALLOW_HLS and ALWAYS_USE_HLS and [=[
 <script type="text/javascript" src="hls.min.js" defer></script>
@@ -1084,8 +1144,7 @@ end
 function GetPcrFromTsPacket(adaptation,buf,i)
   i=i or 1
   --adaptation_field_length and PCR_flag
-  return adaptation>=2 and buf:byte(i+4)>=5 and buf:byte(i+5)%32>15 and
-    ((buf:byte(i+6)*256+buf:byte(i+7))*256+buf:byte(i+8))*256+buf:byte(i+9)
+  return adaptation>=2 and buf:byte(i+4)>=5 and buf:byte(i+5)%32>15 and GetBeNumber(buf,i+6,4)
 end
 
 --PCRまで読む
@@ -1147,7 +1206,7 @@ function GetIFrameVideoStream(f)
         --H.262/264/265 PES
         videoPid=ts.pid
         stream={}
-        pesRemain=buf:byte(pos+4)*256+buf:byte(pos+5)
+        pesRemain=GetBeNumber(buf,pos+4,2)
         headerRemain=buf:byte(pos+8)
         seqState=0
         pos=pos+9
@@ -1279,21 +1338,21 @@ function GetTotAndServiceID(f)
           if ts.pid==0 and pointer+13<=188 and id==0x00 then
             --PAT
             local sectionLen=buf:byte(pointer+2)
-            sid=buf:byte(pointer+8)*256+buf:byte(pointer+9)
+            sid=GetBeNumber(buf,pointer+8,2)
             if sectionLen>=17 and sid==0 then
-              sid=buf:byte(pointer+12)*256+buf:byte(pointer+13)
+              sid=GetBeNumber(buf,pointer+12,2)
             end
             if sectionLen<13 or sid==0 then
               sid=nil
             end
           elseif ts.pid==16 and pointer+4<=188 and id==0x40 then
             --NIT
-            nid=buf:byte(pointer+3)*256+buf:byte(pointer+4)
+            nid=GetBeNumber(buf,pointer+3,2)
           elseif ts.pid==20 and pointer+7<=188 and (id==0x70 or id==0x73) and not tot then
             --TDT,TOT
             local pcr2=ReadToPcr(f,pcrPid)
             if not pcr2 then break end
-            local mjd=buf:byte(pointer+3)*256+buf:byte(pointer+4)
+            local mjd=GetBeNumber(buf,pointer+3,2)
             local h=buf:byte(pointer+5)
             local m=buf:byte(pointer+6)
             local s=buf:byte(pointer+7)
@@ -1324,11 +1383,265 @@ function ReadJikkyoChunk(f)
   return head..payload
 end
 
+--ビッグエンディアンの値を取得する
+function GetBeNumber(buf,pos,len)
+  local n=0
+  for i=pos,pos+len-1 do n=n*256+buf:byte(i) end
+  return n
+end
+
 --リトルエンディアンの値を取得する
 function GetLeNumber(buf,pos,len)
   local n=0
   for i=pos+len-1,pos,-1 do n=n*256+buf:byte(i) end
   return n
+end
+
+--WebVTT字幕ファイルの種類を調べる
+function TestVttKind(path)
+  local r,f=nil,edcb.io.open(path,'rb')
+  if f then
+    r=(f:read(1024) or ''):find('^[^>]*b24caption%-2aaf6fcf%-6388%-4e59%-88ff%-46e1555d0edd') and 'metadata' or 'captions'
+    f:close()
+  end
+  return r
+end
+
+--MP4のBoxの位置を探す
+function FindMP4BoxPosition(f,path,currentBoxPos)
+  local i=tonumber(path:match('^....([0-9]+)'))
+  if not i or currentBoxPos>=0 and not f:seek('set',currentBoxPos) then return nil end
+  repeat
+    local head=f:read(8)
+    if not head or #head~=8 then break end
+    local boxSize=GetBeNumber(head,1,4)
+    if boxSize==1 then
+      --64bit形式
+      head=head..(f:read(8) or '')
+      if #head~=16 then break end
+      boxSize=GetBeNumber(head,9,8)
+    end
+    if boxSize<#head then break end
+    if path:sub(1,4)==head:sub(5,8) then
+      i=i-1
+      if i<0 then
+        if path:find('^....[0-9]+$') then return f:seek(),boxSize-#head end
+        return FindMP4BoxPosition(f,path:match('^....[0-9]+.(.*)$'),-1)
+      end
+    end
+  until not f:seek('cur',boxSize-#head)
+  return nil
+end
+
+--MP4のBoxを読む
+function ReadMP4Box(f,path,currentBoxPos)
+  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
+  if pos and size<1024*1024 then
+    local data=f:read(size)
+    if data and #data==size then return data end
+  end
+  return nil
+end
+
+--MP4のFullBoxを読む
+function ReadMP4FullBox(f,path,currentBoxPos)
+  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
+  if pos and size>=4 and size<1024*1024 then
+    local head=f:read(4)
+    if head and #head==4 then
+      local data=f:read(size-4)
+      if data and #data==size-4 then return data,head:byte(1),GetBeNumber(head,2,3) end
+    end
+  end
+  return nil
+end
+
+--pathに対応するチャプターファイルを読み込む
+function LoadAttachedChapters(path)
+  local function parseTvt(src)
+    --BOMの有無にかかわらずUTF-8
+    local r,i={},src:find('^\xef\xbb\xbf[Cc]%-') and 6 or src:find('^[Cc]%-') and 3
+    if not i then return nil end
+    while not src:find('^[Cc]',i) do
+      local pos,c,name=src:match('^([0-9]+)([^0-9-])([^-]*)%-',i)
+      if not pos then return nil end
+      name=name:gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd')
+      if c:find('[Ee]') then
+        --動画の末尾
+        r[#r+1]={pos=math.huge,name=name}
+      elseif c:find('[Dd]') then
+        --単位は100msec
+        r[#r+1]={pos=pos*100,name=name}
+      elseif c:find('[Cc]') then
+        --単位はmsec
+        r[#r+1]={pos=pos*1,name=name}
+      end
+      i=i+#pos+#c+#name+1
+    end
+    table.sort(r,CompareFields('pos'))
+    return r
+  end
+  local function parseOgm(src)
+    local r={}
+    --BOMがなければShift_JISと仮定、往復変換できなければUTF-8(化けるかもしれない)
+    if src:find('^\xef\xbb\xbf') then
+      src=src:sub(4)
+    else
+      local esc=edcb.htmlEscape
+      edcb.htmlEscape=0
+      local conv=edcb.Convert('utf-8','cp932',src) or ''
+      src=src==edcb.Convert('cp932','utf-8',conv) and conv or edcb.Convert('utf-8','utf-8',src)
+      edcb.htmlEscape=esc
+    end
+    for s in src:gmatch('[^\n]+') do
+      s=s:gsub('^[\t\r ]*(.-)[\t\r ]*$','%1')
+      if s:find('^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]') then
+        if #r>0 and r[#r].id and s:find('^'..r[#r].id..'[Nn][Aa][Mm][Ee]=',8) then
+          --"CHAPTER[0-9]*NAME="
+          r[#r].name=s:sub(#r[#r].id+13):gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd')
+          r[#r].id=nil
+        else
+          --例えば"CHAPTER[0-9]*COMMENT="などは無視する
+          if s:find('^[0-9]*=',8) then
+            r[#r>0 and not r[#r].name and #r or #r+1]={}
+            --"CHAPTER[0-9]*=HH:MM:SS.sss"
+            local id,hh,mm,ss,ms=s:match('^([0-9]*)=([0-9][0-9]):([0-9][0-9]):([0-9][0-9])%.([0-9][0-9][0-9])',8)
+            if id then
+              r[#r].id=id
+              r[#r].pos=((hh*60+mm)*60+ss)*1000+ms
+            end
+          end
+        end
+      elseif s~='' then
+        --空行以外は認めない
+        return nil
+      end
+    end
+    if #r>0 and not r[#r].name then table.remove(r) end
+    table.sort(r,CompareFields('pos'))
+    return r
+  end
+  local function parseMP4(f)
+    local function parseEntry(data,pos,unit,getter)
+      if #data<pos+3 then return nil end
+      local r,n={},GetBeNumber(data,pos,4)
+      if #data<pos+3+n*unit then return nil end
+      for i=1,n do
+        r[i]=getter(data,pos+4+(i-1)*unit,unit)
+      end
+      return r
+    end
+    local moov=FindMP4BoxPosition(f,'moov0',0)
+    if not moov then return nil end
+    local scale,stbl
+    for i=0,99 do
+      local trak=FindMP4BoxPosition(f,'trak'..i,moov)
+      if not trak then break end
+      local chap=ReadMP4Box(f,'tref0/chap0',trak)
+      if chap and #chap>=4 then
+        local trackID=GetBeNumber(chap,1,4)
+        for j=0,99 do
+          trak=FindMP4BoxPosition(f,'trak'..j,moov)
+          if not trak then break end
+          local tkhd,ver=ReadMP4FullBox(f,'tkhd0',trak)
+          if tkhd and #tkhd>=(ver==1 and 20 or 12) and trackID==GetBeNumber(tkhd,ver==1 and 17 or 9,4) then
+            local mdia=FindMP4BoxPosition(f,'mdia0',trak)
+            if mdia then
+              local mdhd,ver=ReadMP4FullBox(f,'mdhd0',mdia)
+              local hdlr=ReadMP4FullBox(f,'hdlr0',mdia)
+              if mdhd and #mdhd>=(ver==1 and 20 or 12) and hdlr and hdlr:find('^....text') then
+                scale=GetBeNumber(mdhd,ver==1 and 17 or 9,4)
+                stbl=FindMP4BoxPosition(f,'minf0/stbl0',mdia)
+              end
+            end
+            break
+          end
+        end
+        break
+      end
+    end
+    if not stbl or scale==0 then return nil end
+    local stco=ReadMP4FullBox(f,'co640',stbl)
+    stco=stco and parseEntry(stco,1,8,GetBeNumber) or
+      not stco and parseEntry(ReadMP4FullBox(f,'stco0',stbl) or {},1,4,GetBeNumber)
+    local sampleSize
+    local stsz=ReadMP4FullBox(f,'stsz0',stbl)
+    if stsz then
+      sampleSize=#stsz>=8 and GetBeNumber(stsz,1,4) or 0
+      sampleSize=sampleSize>0 and sampleSize
+      stsz=sampleSize and GetBeNumber(stsz,5,4) or parseEntry(stsz,5,4,GetBeNumber)
+    end
+    local stsc=parseEntry(ReadMP4FullBox(f,'stsc0',stbl) or {},1,12,function(data,pos) return {
+      first=GetBeNumber(data,pos,4),samples=GetBeNumber(data,pos+4,4)
+    } end)
+    local stts=parseEntry(ReadMP4FullBox(f,'stts0',stbl) or {},1,8,function(data,pos) return {
+      count=GetBeNumber(data,pos,4),delta=GetBeNumber(data,pos+4,4)
+    } end)
+    local r={}
+    if stco and stsz and (not sampleSize or stsz<256*1024) and stsc and stts then
+      --各サンプルのファイル位置を計算
+      local stso={}
+      for i,v in ipairs(stsc) do
+        if i<#stsc and stsc[i+1].first<=v.first or v.samples==0 then break end
+        for j=v.first,math.min(i<#stsc and stsc[i+1].first-1 or #stco,#stco) do
+          stso[#stso+1]=stco[j]
+          for k=2,v.samples do
+            if #stso>=(sampleSize and stsz or #stsz) then break end
+            stso[#stso+1]=stso[#stso]+(sampleSize or stsz[#stso])
+          end
+        end
+      end
+      if #stso==(sampleSize and stsz or #stsz) then
+        local nsum,pos,j=0,0,1
+        for i=1,math.min(#stso,10000) do
+          if nsum<1024*1024 and f:seek('set',stso[i]) then
+            local n=f:read(2)
+            if n and #n==2 then
+              n=GetBeNumber(n,1,2)
+              local name=2+n<=(sampleSize or stsz[i]) and f:read(n)
+              if name and #name==n then
+                local esc=edcb.htmlEscape
+                edcb.htmlEscape=0
+                --UTF-8のみ対応
+                name=edcb.Convert('utf-8','utf-8',name)==name and name:gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd') or ''
+                edcb.htmlEscape=esc
+                r[#r+1]={pos=math.floor(pos/scale*1000),name=name}
+                nsum=nsum+#name
+              end
+            end
+          end
+          while j<#stts and stts[j].count<i do
+            j=j+1
+            stts[j].count=stts[j].count+stts[j-1].count
+          end
+          if j>#stts or stts[j].count<i then break end
+          pos=pos+stts[j].delta
+        end
+      end
+    end
+    return r
+  end
+  for ext in CHAPTER_EXTENSIONS:gmatch('[^|]+') do
+    for i,dir in ipairs(CHAPTERS_FOLDER_NAME=='' and {''} or {'%1'..CHAPTERS_FOLDER_NAME:gsub('%%','%%%%'),''}) do
+      if not IsEqualPath(ext,'.m4a') and not IsEqualPath(ext,'.mp4') then
+        local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
+        if f then
+          local src=(f:seek('end') or math.huge)<1024*1024 and f:seek('set') and f:read('*a')
+          f:close()
+          return src and (IsEqualPath(ext,'.chapter') and parseTvt or parseOgm)(src) or nil
+        end
+      elseif dir=='' and #path>#ext and IsEqualPath(path:sub(-#ext),ext) then
+        local f=edcb.io.open(path,'rb')
+        if f then
+          local r=parseMP4(f)
+          f:close()
+          if r then return r end
+        end
+      end
+    end
+  end
+  --もしあればファイル名から抽出
+  return CHAPTER_EXTENSIONS:find('|@$') and parseTvt(path:match('[^'..DIR_SEPS..']*$'):match('[Cc]%-.*$') or '')
 end
 
 DOCTYPE_HTML4_STRICT='<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
@@ -1339,7 +1652,7 @@ function DefaultHeadContents()
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
-<script type="text/javascript" src="common.js?ver=20260215" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
+<script type="text/javascript" src="common.js?ver=20260305" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
 <link rel="stylesheet" type="text/css" href="default.css">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')
