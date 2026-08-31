@@ -59,6 +59,10 @@
   <PropertyGroup>
     <ApplicationManifest>App.manifest</ApplicationManifest>
   </PropertyGroup>
+  <PropertyGroup Condition="$(TargetFrameworkVersion.Contains('v4.8'))">
+    <ApplicationManifest>AppPM.manifest</ApplicationManifest>
+    <DefineConstants>$(DefineConstants);PER_MONITOR_DPI</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
